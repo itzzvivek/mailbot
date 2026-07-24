@@ -80,3 +80,8 @@ async def post_new_mail(channel_id: int, message: dict):
         embed.set_footer(text=message["date"])
 
     await channel.send(embed=embed)
+
+
+if __name__ == "__main__":
+    log.warning("bot.py is not meant to be run directly; run main.py instead")
+

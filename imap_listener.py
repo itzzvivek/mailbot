@@ -1,3 +1,13 @@
+"""
+Watches Gmail over IMAP IDLE -- a single persistent connection that Gmail
+uses to push "something changed" events to us. This replaces Cloud Pub/Sub,
+the webhook server, and the Gmail REST API entirely: no Google Cloud project,
+no billing account, no public HTTPS endpoint needed.
+
+This module is synchronous/blocking by design (imapclient is not async-native)
+and is meant to run in its own background thread -- see main.py, which bridges
+its callback back into the Discord bot's asyncio event loop.
+"""
 import email
 import logging
 import time
@@ -115,23 +125,28 @@ def run_forever(on_new_message):
                 log.info("No prior state, starting from UID %s", last_uid)
 
             while True:
+                log.info("Entering IDLE, waiting up to %ss for a change...", IMAP_IDLE_TIMEOUT_SECONDS)
                 client.idle()
                 try:
-                    client.idle_check(timeout=IMAP_IDLE_TIMEOUT_SECONDS)
+                    responses = client.idle_check(timeout=IMAP_IDLE_TIMEOUT_SECONDS)
                 finally:
                     client.idle_done()
+                log.info("Woke from IDLE. Server responses: %s", responses)
 
                 new_uids = sorted(uid for uid in client.search("ALL") if uid > last_uid)
+                log.info("last_uid=%s, new_uids found this cycle=%s", last_uid, new_uids)
                 if not new_uids:
                     continue  # keepalive cycle or a change that wasn't a new message
 
                 watched = all_watched_channels()
+                log.info("Currently watched channels/filters: %s", watched)
 
                 for uid in new_uids:
                     last_uid = uid
                     set_last_seen_uid(last_uid)
 
                     if not watched:
+                        log.info("UID %s arrived but no channel has filters set, skipping fetch", uid)
                         continue  # nobody's listening, don't bother fetching details
 
                     try:
@@ -140,9 +155,20 @@ def run_forever(on_new_message):
                         log.exception("Failed to fetch UID %s", uid)
                         continue
 
+                    log.info(
+                        "UID %s | subject=%r | labels=%s",
+                        uid, summary["subject"], sorted(summary["label_ids"]),
+                    )
+
+                    matched_any = False
                     for channel_id, filters in watched.items():
-                        if message_matches_filters(summary, filters):
+                        is_match = message_matches_filters(summary, filters)
+                        log.info("  channel %s filters=%s -> match=%s", channel_id, filters, is_match)
+                        if is_match:
+                            matched_any = True
                             on_new_message(channel_id, summary)
+                    if not matched_any:
+                        log.info("  UID %s matched no channel's filters, nothing posted", uid)
 
         except Exception:
             log.exception("IMAP connection dropped, reconnecting in %ss", IMAP_RECONNECT_DELAY_SECONDS)
