@@ -1,0 +1,14 @@
+.git
+.github
+.env
+storage.json
+__pycache__
+*.pyc
+.pytest_cache
+tests
+venv
+.venv
+README.md
+FREE_DEPLOY.md
+CI_CD.md
+.idea
