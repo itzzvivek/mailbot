@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DISCORD_BOT_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
-DISCORD_GUILD_ID = os.getenv("DISCORD_GUILD_ID")  # optional
+DISCORD_GUILD_ID = os.getenv("DISCORD_GUILD_ID")  # optional    
 
 GMAIL_ADDRESS = os.environ["GMAIL_ADDRESS"]
 GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
