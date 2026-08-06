@@ -38,11 +38,11 @@ def test_post_new_mail_handles_missing_subject(monkeypatch):
         "from": "Bob <bob@example.com>",
         "subject": "",
         "snippet": "",
-        "data": "",
+        "date": "",
         "link": "https://mail.google.com/mail/u/0/#inbox/456"
     }
 
     asyncio.run(bot_module.post_new_mail(channel_id=999, message=message))
 
     embed = fake_channel.sent_embed
-    assert embed.title == "(no_subject)"
+    assert embed.title == "(no subject)"

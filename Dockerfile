@@ -13,6 +13,6 @@ RUN useradd --create-home appuser && \
 USER appuser
 
 
-VOLUME ["/app/data"]
+VOLUME ["/app"]
 
 CMD ["python", "main.py"]
