@@ -3,10 +3,7 @@ services:
     build: .
     env_file: .env
     environment:
-      STORAGE_FILE: app/storage.json
+      STORAGE_FILE: /app/data/storage.json
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
     restart: unless-stopped
-
-volumes:
-  bot-data:

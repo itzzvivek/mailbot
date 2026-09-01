@@ -21,7 +21,7 @@ GMAIL_FILTER_OPTIONS = {
     "starred": "\\Starred",
 }
 
-STORAGE_FILE = "storage.json"
+STORAGE_FILE = "data/storage.json"
 IMAP_HOST = "imap.gmail.com"
 IMAP_IDLE_TIMEOUT_SECONDS = 240  # well under Gmail's ~29 min IDLE cutoff
 IMAP_RECONNECT_DELAY_SECONDS = 15

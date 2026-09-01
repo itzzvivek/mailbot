@@ -31,10 +31,17 @@ async def on_ready():
 @bot.tree.command(name="gmail-filter-set", description="Choose which mail categories post to this channel")
 @app_commands.choices(category=FILTER_CHOICES)
 async def gmail_filter_set(interaction: discord.Interaction, category: app_commands.Choice[str]):
+    log.info(
+        "gmail-filter-set invoked: channel=%s category.value=%r category.name=%r",
+        interaction.channel_id, category.value, category.name,
+    )
     current = get_channel_filters(interaction.channel_id)
+    log.info("current filters before append: %r", current)
     if category.value not in current:
         current.append(category.value)
+    log.info("current filters after append: %r", current)
     set_channel_filters(interaction.channel_id, current)
+    log.info("filters after set_channel_filters, re-read from storage: %r", get_channel_filters(interaction.channel_id))
     await interaction.response.send_message(
         f"✅ This channel now shows **{category.value}** mail. "
         f"Active filters: {', '.join(current)}",
