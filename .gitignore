@@ -1,0 +1,5 @@
+app/.env
+.venv
+.idea/
+.idea/workspace.xml
+central-bot/.env

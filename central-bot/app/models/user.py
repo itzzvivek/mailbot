@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean
-from sqlalchemy.ext.declarative import delclarative_base
+from sqlalchemy.orm import declarative_base
 from datetime import datetime
 import uuid
 
@@ -14,7 +14,6 @@ class User(Base):
     api_key = Column(String, unique=True, nullable=False)
 
     #Encryption Gmail Token
-
     encrypted_token = Column(Text, nullable=True)
     token_salt = Column(String, nullable=True)
     passcode_hash = Column(String, nullable=True)
@@ -40,7 +39,7 @@ class UserFilter(Base):
     discover_id = Column(String, index=True, nullable=False)
     channel_id = Column(String, nullable=False)
     filter_type= Column(String, nullable=False)
-    filter_type = Column(String, nullable=False)
+    filter_value = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class NotificationLog(Base):
