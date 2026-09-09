@@ -106,3 +106,87 @@ async def connect_gmail(request: TokenRequest, x_api_key: str = Header(...)):
         "status": "connected",
         "message": "Gmail connected and encrypted with your passcode"
     }
+
+@router.post("api/resume")
+async def resume_gmail(request: PasscodeRequest, x_api_key: str = Header(...)):
+    """Resume Gmail monitoring (decrypting token with passcode)"""
+    user = get_user_by_api_key(x_api_key)
+    if not user:
+        raise HTTPException(status_code=401, details="Invalid API Key")
+
+    if not user.encrypted_token:
+        raise HTTPException(status_code=400, details="No Gmail token found. Use /gmail-connect first")
+
+    # Verify passcode
+    if not verify_passcode(request.passcode, user.passcode_hash):
+        raise HTTPException(status_code=401, details="Incorrect passcode")
+
+    #Decrypt token
+    try:
+        token = decrypt_token(user.encrypted_token, request.passcode, user.token_salt)
+    except ValueError:
+        raise HTTPException(status_code=401, details="Incorrect passcode or corrupted token")
+
+    # Store decrypted token on cache (1 hour TTL)
+    token_cache.store_token(user.discover_id, ttl=360)
+
+    #update user state
+    update_user_state(user.discord_id, True)
+
+    return {
+        "status": "resumed",
+        "message": "Gmail resumed for 1 hours"
+    }
+
+@router.post("/api/pause")
+async def pause_gmail(x_api_key: str = Header(...)):
+    """Pause Gmail monitoring"""
+    user = get_user_by_api_key(x_api_key)
+    if not user:
+        raise HTTPException(status_code=401, details="Invalid API Key")
+    
+    # Clear cached token
+    token_cache.clear_token(user.discord_id)
+    
+    # update user state
+    update_user_state(user.discord_id, False)
+    
+    return {
+        "status": "paused",
+        "message": "Gmail monitoring paused. Credentials cleared from memory."
+    }
+
+@router.get("/api/status")
+async def get_status(x_api_key: str = Header(...)):
+    """Get user's current status"""
+
+    user = get_user_by_api_key(x_api_key)
+    if not user:
+        raise HTTPException(status_code=401, details="Invalid API Key")
+
+    #clear cached token
+    token_cache.clear_token(user.discord_id)
+
+    #update user state
+    update_user_state(user.discord_id, False)
+
+    return {
+        "status": "paused",
+        "message": "Gmail monitoring paused. Credentials cleared from memory."
+    }
+
+@router.get("/api/status")
+async def get_status(x_api_key: str = Header(...)):
+    """Get user's current status"""
+    user = get_user_by_api_key(x_api_key)
+    if not user:
+        raise HTTPException(status_code=401, details="Invalid API Key")
+    stats = get_user_state(user.discord_id)
+
+    return {
+        "is-active": user.is_active,
+        "has_token": bool(user),
+        "stats": stats,
+        "paused": user.paushed_at,
+        "resumed": user.resumed_at,
+    }
