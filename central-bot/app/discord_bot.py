@@ -10,11 +10,12 @@ from datetime import datetime
 
 from app.database import (
     create_user, get_user_by_discord_id, delete_user,
-    get_user_filter, save_user_filter, delete_user_filter,
+    get_user_filters, save_user_filter, delete_user_filter,
     get_user_stats, update_user_state, get_user_by_api_key
 )
 from app.core.security import generate_api_key, token_cache
 from app.config import settings
+from unicodedata import category
 
 logger = logging.getLogger(__name__)
 
@@ -222,4 +223,126 @@ async def resume_gmail(interaction: discord.Interaction, passcode:str):
             ephemeral=True
         )
         return
+
+    # The actual decryption happens in the local agent
+    # For Discord, we just trigger the resume
+    # The local agent will handle the decryption
+
+    #update user state
+    update_user_state(user_id, True)
+
+    await interaction.response.send_message(
+        "Gmail monitoring resumed.\n"
+        "• Your local agent will decrypt the token\n"
+        "• Token active for 1 hour\n"
+        "• Use `/gmail-pause` to pause anytime",
+        ephemeral=True
+    )
+    logger.info(f"User resumed: {interaction.user.name}({user_id})")
+
+@bot.tree.command(
+    name="gmail-status",
+    description="Check your registration and monitoring status",
+)
+async def status_gmail(interaction: discord.Interaction):
+    """Check user's current status"""
+    user_id = str(interaction.user.id)
+    user = get_user_by_discord_id(user_id)
+
+    if not user:
+        await interaction.response.send_message(
+            "You need to register first with `/gmail-register`",
+            ephemeral=True
+        )
+        return
+
+    stats = get_user_stats(user_id)
+    filters = get_user_filters(user_id, str(interaction.user.id))
+
+    # Check if token is in cache
+    cached_token = token_cache.get_token(user_id)
+
+    embed = discord.Embed(
+        title="Your status",
+        color=discord.Color.blue()
+    )
+    embed.add_field(
+        name="API Key",
+        value=f"`{user.api_key}`",
+        inline=False
+    )
+    embed.add_field(
+        name="Status",
+        value=f"Activate" if user.activate else "Paused",
+        inline=True
+    )
+    embed.add_field(
+        name="Token",
+        value=f"In memory" if cached_token else "Encrypted",
+        inline=False
+    )
+    embed.add_field(
+        name="Notifications",
+        value=str(stats.get('notifications', 0)),
+        inline=True
+    )
+    embed.add_field(
+        name="Active Filters",
+        value=", ".join([f.filter_value for f in filters]) or "None",
+        inline=False
+    )
+    embed.add_field(
+        name="Registered",
+        value=user.created_at.strftime("%m/%d/%Y, %H:%M"),
+        inline=False
+    )
+    embed.add_field(
+        name="Registered",
+        value=user.created_at.strftime("%m/%d/%Y, %H:%M"),
+        inline=True
+    )
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(
+    name="gmail-filter-add",
+    description="Add a filter for this channel"
+)
+@app_commands.choices(category=FILTER_CHOICES)
+async def add_filter(
+        interaction: discord.Interaction,
+        category: app_commands.Choice[str]
+):
+    """Add a filter for the current channel"""
+    user_id = str(interaction.user.id)
+    channel_id = str(interaction.channel_id)\
+
+    # Check if registered
+    user = get_user_by_discord_id(user_id)
+    if not user:
+        await interaction.response.send_message(
+            "You need to register first with  `/gmail-register`",
+            ephemeral=True
+        )
+        return
+
+    # save filter
+    save_user_filter(user_id, channel_id, "category", category.value)
+
+    #Get updated filters
+    filters = get_user_filters(user_id, channel_id)
+    filter_values = [f.filter_value for f in filters]
+
+    await interaction.response.send_message(
+        f"Added filter: **{category.name}**\n"
+        f"Active filters: {', '.join(filter_values) or 'None'}",
+        ephemeral=True
+    )
+
+    logger.info(f"Filter added: {user_id} | {channel_id} | {category.value}")
+
+@bot.tree.command(
+    name="gmail-filter-remove",
+    description="Remove a filter for this channel"
+)
 
