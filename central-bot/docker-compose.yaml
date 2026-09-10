@@ -1,0 +1,41 @@
+version: '3.14'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: mailbot
+      POSTGRES_PASSWORD: secure_password_here
+      POSTGRES_DB: mailbot_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  bot:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://mailbot:postgres@postgres/mailbot_db
+      REDIS_URL: redis://redis:6379/0
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID}
+      ENCRYPTION_SALT: ${ENCRYPTION_SALT}
+      API_SECRET_KEY: ${API_SECRET_KEY}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+volumes:
+  postgres_data:
