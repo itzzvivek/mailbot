@@ -345,4 +345,83 @@ async def add_filter(
     name="gmail-filter-remove",
     description="Remove a filter for this channel"
 )
+@app_commands.choices(category=FILTER_CHOICES)
+async def remove_filter(
+        interaction: discord.Interaction,
+        category: app_commands.Choice[str]
+):
+    """Remove a filter for the current channel"""
+    user_id = str(interaction.user.id)
+    channel_id = str(interaction.channel_id)
 
+    # Delete filter
+    delete_user_filter(user_id, channel_id, "category", category.value)
+
+    # Get updated filters
+    filters = get_user_filters(user_id, channel_id)
+    filter_values = [f.filter_value for f in filters]
+
+    await interaction.response.send_message(
+        f"Removed filter: **{category.name}**\n"
+        f"Active filters: {', '.join(filter_values) or 'None'}",
+        ephemeral=True
+    )
+
+@bot.tree.command(
+    name="gmail-filter-show",
+    description="Show all filters for this channel"
+)
+async def show_filter(interaction: discord.Interaction):
+    """show current filters for the channel"""
+    user_id = str(interaction.user.id)
+    channel_id = str(interaction.channel_id)
+
+    filters = get_user_filters(user_id, channel_id)
+    filter_values = [f.filter_value for f in filters]
+
+    text = ", ".join(filter_values) if filter_values else "None"
+    await interaction.response.send_message(
+        f"Active filers for this channel: **{text}**",
+        ephemeral=True
+    )
+
+@bot.tree.command(
+    name="gmail-revoke",
+    description="Revoke access and delete all your data"
+)
+async def revoke_access(interaction: discord.Interaction):
+    """Delete all your data"""
+    user_id = str(interaction.user.id)
+
+    # Confirm deletion
+    await interaction.response.send_message(
+        "**WARNING**: This will delete all your data.\n"
+        "Type `/gmail-revoke-confirm` to confirm.\n"
+        "This action cannot be undone!",
+        ephemeral=True
+    )
+
+@bot.tree.command(
+    name="gmail-revoke-confirm",
+    description="Confirm data deletion (irreversible)"
+)
+async def revoke_confirm(interaction: discord.Interaction):
+    """Confirm data delete user data"""
+    user_id = str(interaction.user.id)
+
+    #clear cache
+    token_cache.revoke_token(user_id)
+
+    # Delete from database
+    delete_user(user_id)
+
+    await interaction.response.send_message(
+        "All your data has been deleted.\n"
+        "• API key revoked\n"
+        "• Filters removed\n"
+        "• Notification logs cleared\n"
+        "• Gmail token deleted\n\n"
+        "You can re-register anytime with `/gmail-register`",
+        ephemeral=True
+    )
+    logger.info(f"User deleted: {interaction} ({user_id})")
