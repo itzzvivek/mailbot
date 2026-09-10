@@ -1,4 +1,5 @@
-.env
-storage.json
-__pycache__
-.idea
+app/.env
+.venv
+.idea/
+.idea/workspace.xml
+central-bot/.env
