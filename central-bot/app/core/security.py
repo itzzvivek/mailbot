@@ -4,7 +4,7 @@ import base64
 from typing import Optional
 
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitive import hashes
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import bcrypt
 from app.config import settings
@@ -55,7 +55,7 @@ def verify_passcode(passcode: str, hashed:str) -> bool:
     """Verify passcode against stored hash"""
     return  bcrypt.checkpw(passcode.encode(), hashed.encode())
 
-def generate_api_keys() -> str:
+def generate_api_key() -> str:
     """Generate secure API key for users"""
     return secrets.token_urlsafe(settings.API_KEY_LENGTH)
 

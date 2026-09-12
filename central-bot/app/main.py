@@ -36,7 +36,7 @@ app.add_middleware(
 )
 
 # Include routes
-app.include_rotuer(router)
+app.include_router(router)
 
 @app.on_event("startup")
 async def startup():

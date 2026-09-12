@@ -5,7 +5,7 @@ services:
     image: postgres:15-alpine
     environment:
       POSTGRES_USER: mailbot
-      POSTGRES_PASSWORD: secure_password_here
+      POSTGRES_PASSWORD: mailbot
       POSTGRES_DB: mailbot_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -22,12 +22,13 @@ services:
   bot:
     build: .
     environment:
-      DATABASE_URL: postgresql://mailbot:postgres@postgres/mailbot_db
+      DATABASE_URL: postgresql://mailbot:mailbot@postgres:5432/mailbot_db
       REDIS_URL: redis://redis:6379/0
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
       DISCORD_GUILD_ID: ${DISCORD_GUILD_ID}
       ENCRYPTION_SALT: ${ENCRYPTION_SALT}
       API_SECRET_KEY: ${API_SECRET_KEY}
+      API_KEY_LENGTH: ${API_KEY_LENGTH}
     ports:
       - "8000:8000"
     depends_on:

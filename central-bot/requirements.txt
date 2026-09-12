@@ -4,9 +4,11 @@ uvicorn[standard]==0.24.0
 python-dotenv==1.0.0
 pydantic==2.13.5
 python-multipart==0.0.6
+pydantic-settings==2.15.0
 
 # Discord
 discord.py==2.3.2
+audioop-lts==0.2.1
 
 # Database
 sqlalchemy==2.0.52

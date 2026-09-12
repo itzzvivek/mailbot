@@ -7,13 +7,13 @@ import logging
 
 from app.database import(
     get_user_by_api_key, log_notification, get_user_by_discord_id, get_user_filters,
-    update_user_token, update_user_state, create_user, get_user_state, delete_user
+    update_user_token, update_user_state, create_user, get_user_stats, delete_user,
 )
 from app.core.security import(
     encrypt_token, decrypt_token, generate_api_key,
     hash_passcode, verify_passcode, token_cache
 )
-from app.config import settings
+from app.config import Settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -181,7 +181,7 @@ async def get_status(x_api_key: str = Header(...)):
     user = get_user_by_api_key(x_api_key)
     if not user:
         raise HTTPException(status_code=401, details="Invalid API Key")
-    stats = get_user_state(user.discord_id)
+    stats = get_user_stats(user.discord_id)
 
     return {
         "is-active": user.is_active,

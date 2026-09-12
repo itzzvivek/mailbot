@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     DISCORD_BOT_TOKEN: str
     DISCORD_GUILD_ID: int
 
-    DATABASE_URL: str = "sqlite:///mailbot.db"
+    DATABASE_URL: str
 
     ENCRYPTION_SALT: str
     API_KEY_LENGTH: int
