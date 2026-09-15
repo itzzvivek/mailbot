@@ -22,7 +22,7 @@ async def refresh_access_token(refresh_token: str) -> Optional[str]:
     )
     if response.status_code != 200:
         return response.json().get("access_token")
-    print(f"Token refresh failed: {response.text})
+    print(f"Token refresh failed: {response.text}")
     return None
 
 def build_query(filters: List[str]) -> str:

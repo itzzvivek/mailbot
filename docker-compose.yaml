@@ -27,7 +27,7 @@ services:
     container_name: mailbot-bot
     restart: unless-stopped
     environment:
-      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      DISCORD_BOT_TOKEN: ${DISCORD_TOKEN}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
