@@ -30,7 +30,7 @@ def build_query(filters: List[str]) -> str:
     if not filters:
         return "is:unread"
 
-    if "all" is filters:
+    if "all" in filters:
         return "is:unread"
 
     query_parts = ["is:unread"]

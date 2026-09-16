@@ -1,6 +1,6 @@
 import os
 import discord
-from discord import app_command
+from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 import logging
@@ -22,7 +22,7 @@ logging.basicConfig(
 log = logging.getLogger("bot")
 
 intents = discord.Intents.default()
-bot = commands.Bot(commands_prefix = "!", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
@@ -38,21 +38,22 @@ async def on_disconnect():
 
 @bot.tree.command(name="connect", description="connect your gmail account")
 async def connect(interaction: discord.Interaction):
-    user = await get_user(interaction)
+    user = await get_user(interaction.user.id)
 
     if user:
         await interaction.response.send_message(
             "You're already connected\n",
-            "Use `/setchannel` to set where notification.",
+            "Use `/setchannel` to set where notification go.",
             ephemeral=True
         )
+        return
 
     oauth_url= f"http://localhost:8080/oauth?discord_id={interaction.user.id}"
 
     await interaction.response.send_message(
         f"**Connect your Gmail:**\n"
         f"{oauth_url}\n\n"
-        f"After connecting, use `setchannel` to set where notification go.`",
+        f"After connecting, use `/setchannel` to set where notification go.`",
         ephemeral=True
     )
 
@@ -302,4 +303,4 @@ async def check_emails():
 # ─── Run ───
 
 if __name__ == "__main__":
-    bot.run(os.getenv("DISCORD_TOKEN"))
+    bot.run(os.getenv("DISCORD_BOT_TOKEN"))

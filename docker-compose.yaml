@@ -11,7 +11,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./mailbot.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
     healthcheck:
@@ -27,11 +27,11 @@ services:
     container_name: mailbot-bot
     restart: unless-stopped
     environment:
-      DISCORD_BOT_TOKEN: ${DISCORD_TOKEN}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      REDIRECT_URI: ${REDIRECT_URI}
+      REDIRECT_URL: ${REDIRECT_URL}
       PORT: 8000
     depends_on:
       postgres:
@@ -47,11 +47,11 @@ services:
     restart: unless-stopped
     command: ["uvicorn", "oauth_server:app", "--host", "0.0.0.0", "--port", "8080"]
     environment:
-      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      REDIRECT_URI: ${REDIRECT_URI}
+      REDIRECT_URL: ${REDIRECT_URL}
     ports:
       - "8080:8080"
     depends_on:
