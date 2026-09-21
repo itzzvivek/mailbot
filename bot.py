@@ -8,7 +8,7 @@ import logging
 from database import(
     init_db, close_db, get_user, get_active_users,
     set_channel, add_filter, pause_user, resume_user,
-    delete_user, log_notification, get_user_stats
+    delete_user, log_notification, get_user_stats, remove_filter
 )
 from gmail_reader import fetch_new_emails
 
