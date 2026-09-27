@@ -80,8 +80,28 @@ async def set_channel(discord_id: int, channel_id: int) -> bool:
 
 
 async def add_filter(discord_id: int, filter_name: str) -> List[str]:
-    """Add a filter to user's filters array"""
     async with pool.acquire() as conn:
+        # Case 1: User selected 'all' → wipe all filters, set only 'all'
+        if filter_name == "all":
+            row = await conn.fetchrow("""
+                UPDATE users
+                SET filters = ARRAY['all'],
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE discord_id = $1
+                RETURNING filters
+            """, discord_id)
+            return list(row['filters']) if row else []
+
+        # Case 2: User selected a specific category
+        # First, remove 'all' if present
+        await conn.execute("""
+            UPDATE users
+            SET filters = array_remove(filters, 'all'),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE discord_id = $1 AND 'all' = ANY(filters)
+        """, discord_id)
+
+        # Then add the category (if not already present)
         row = await conn.fetchrow("""
             UPDATE users
             SET filters = array_append(filters, $1),
@@ -91,6 +111,7 @@ async def add_filter(discord_id: int, filter_name: str) -> List[str]:
             RETURNING filters
         """, filter_name, discord_id)
 
+        # If the row wasn't updated (filter already existed), just fetch current
         if not row:
             row = await conn.fetchrow(
                 "SELECT filters FROM users WHERE discord_id = $1",

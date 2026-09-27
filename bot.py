@@ -5,6 +5,8 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 import logging
 
+from unicodedata import category
+
 from database import(
     init_db, close_db, get_user, get_active_users,
     set_channel, add_filter, pause_user, resume_user,
@@ -42,7 +44,7 @@ async def connect(interaction: discord.Interaction):
 
     if user:
         await interaction.response.send_message(
-            "You're already connected\n",
+            "You're already connected\n"
             "Use `/setchannel` to set where notification go.",
             ephemeral=True
         )
@@ -102,8 +104,16 @@ async def notify(interaction: discord.Interaction, category: app_commands.Choice
 
     filters = await add_filter(interaction.user.id, category.value)
 
+    if category.value == "all":
+        note = "You'll now receive notification for **all** emails.\n" \
+                "_(Previous filters were cleared.)_"
+    elif "all" in filters:
+        note = "You'll receive notification for **all** emails."
+    else:
+        note = f"Added **{category.name}** to your notifications."
+
     await interaction.response.send_message(
-        f"You'll be notified about **{category.name}** emails\n"
+        f"{note}\n"
         f"Active filters: `{', '.join(filters) if filters else 'None'}`",
         ephemeral=True
     )
@@ -133,7 +143,7 @@ async def unnotify(interaction: discord.Interaction, category: app_commands.Choi
 
     await interaction.response.send_message(
         f"Removed **{category.name}** from notifications\n"
-        f"Active filters: `{', '.join(filters) if filters else 'None'}`",
+        f"Active filters: `{', '.join(filters) if filters else 'None - you will receive no notifications'}`",
         ephemeral=True
     )
 
