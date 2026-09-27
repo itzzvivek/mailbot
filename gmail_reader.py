@@ -1,5 +1,7 @@
 import os
 import base64
+from idlelib.rpc import response_queue
+
 import requests
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
@@ -49,6 +51,19 @@ def build_query(filters: List[str]) -> str:
         query_parts.append("category:forums")
 
     return " ".join(query_parts)
+
+async def _fetch_message_list(access_token, query, max_results):
+    """Internal function to fetch the list of message IDs."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    response = requests.get(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        headers=headers,
+        params={"q": query, "maxResults": max_results}
+    )
+
+    if response.status_code != 200:
+        response.raise_for_status()
+    return response.json().get("messages", [])
 
 async def fetch_new_emails(
     refresh_token: str,
