@@ -52,6 +52,39 @@ def build_query(filters: List[str]) -> str:
 
     return " ".join(query_parts)
 
+def _get_header(headers: List[Dict], name: str) -> Optional[str]:
+    """Extract a specific header from Gmail message headers"""
+    for header in headers:
+        if header.get("name", "").lower() == name.lower():
+            return header.get("value", "")
+    return None
+
+def _extract_body_preview(payload: dict, max_length: int = 300) -> str:
+    """Extract plain-text preview from Gmail message payload"""
+    try:
+        if "body" in payload and payload.get("mimeType", "") == "text/plain":
+            data = payload["body"].get["data"]
+            if data:
+                decoded = base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
+                return decoded[:max_length].replace("\n", " ").strip()
+
+        parts = payload.get("parts", [])
+        for part in parts:
+            mime = part.get("mimeType", "")
+            if mime == "text/plain":
+                data = part.get("body", {}).get("data")
+                if data:
+                    decoded = base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
+                    return decoded[:max_length].replace("\n", " ").strip()
+
+            if mime.startswith("multipart"):
+                nested = _extract_body_preview(part, max_length)
+                if nested:
+                    return nested
+    except Exception as e:
+        print(f"Error extracting preview: {e}")
+
+
 async def _fetch_message_list(access_token, query, max_results):
     """Internal function to fetch the list of message IDs."""
     headers = {"Authorization": f"Bearer {access_token}"}
