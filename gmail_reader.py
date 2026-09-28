@@ -1,5 +1,7 @@
+import asyncio
 import os
 import base64
+from asyncio import timeout
 from idlelib.rpc import response_queue
 
 import requests
@@ -98,73 +100,108 @@ async def _fetch_message_list(access_token, query, max_results):
         response.raise_for_status()
     return response.json().get("messages", [])
 
+async def _fetch_message_detail(access_token: str, msg_id: str) -> Optional[Dict]:
+    """Internal: Fetch full message details"""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    try:
+        response = requests.get(
+            f"https://gmail/googleapis.com/gmail/v1/users/me/messages/{msg_id}",
+            headers=headers,
+            params={"format": "full"},
+            timeout=15
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        print(f"Error fetching message: {msg_id}:{e}")
+        return None
+
+async def _mark_as_read(access_token: str, msg_id: str) -> bool:
+    """Internal: Mark message as read (remove UNREAD label)"""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    try:
+        response = requests.post(
+            f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{msg_id}/modify",
+            headers=headers,
+            json={"removeLabelIds": ["UNREAD"]},
+            timeout=10
+        )
+        return response.status_code == 200
+    except requests.RequestException as e:
+        print(f"Failed to mark {msg_id} ad read: {e}")
+        return False
+
 async def fetch_new_emails(
     refresh_token: str,
     filters: List[str],
-    max_results: int = 5
+    max_results: int = 5,
+    mark_read: bool = True
 ) -> List[Dict]:
     """Fetch new unread emails from Gmail"""
     access_token = await refresh_access_token(refresh_token)
     if not access_token:
+        print("Could not obtain access token")
         return []
 
-    headers = {"Authorization": f"Bearer {access_token}"}
     query = build_query(filters)
+    print(f"Gmail query: {query}")
 
-    # Fetch message IDs
-    response = requests.get(
-        f"https://gmail.googleapis.com/gmail/v1/users/me/messages",
-        headers=headers,
-        params={"q": query, "maxResults": max_results}
-    )
+    messages = []
+    for attempt in range(3):
+        try:
+            messages = await _fetch_message_list(access_token, query, max_results)
+            if messages:
+                print(f"Found {len(messages)} messages")
+                break
+            else:
+                print(f"No messages found (attempt {attempt + 1})/3")
+        except requests.HTTPError as e:
+            print(f"Attempt {attempt + 1} failed: {e}")
 
-    if response.status_code != 200:
-        print(f"Gmail fetch failed: {response.text}")
+        if attempt < 2:
+            await asyncio.sleep(3)
+
+    if not messages:
         return []
 
-    messages = response.json().get("messages", [])
     emails = []
-
     for msg in messages:
-        try:
-            # Get message details
-            detail = requests.get(
-                f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{msg['id']}",
-                headers=headers,
-                params={"format": "metadata", "metadataHeaders": ["Subject", "From", "Date"]}
-            ).json()
-
-            # Extract headers
-            headers_list = detail.get("payload", {}).get("headers", [])
-            subject = _get_header(headers_list, "Subject") or "(no subject)"
-            sender = _get_header(headers_list, "From") or "Unknown"
-            date = _get_header(headers_list, "Date") or ""
-
-            emails.append({
-                "id": msg["id"],
-                "subject": subject,
-                "from": sender,
-                "preview": detail.get("snippet", "")[:300],
-                "date": date,
-            })
-
-            # Mark as read
-            requests.post(
-                f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{msg['id']}/modify",
-                headers=headers,
-                json={"removeLabelIds": ["UNREAD"]}
-            )
-
-        except Exception as e:
-            print(f"Error processing message {msg['id']}: {e}")
+        msg_id = msg.get("id")
+        if not msg_id:
             continue
 
+        details = await _fetch_message_detail(access_token, msg_id)
+        if not details:
+            continue
+
+        try:
+            header_list=details.get("headers", []).get("headers", [])
+            subject= _get_header(header_list, "Subject") or "(no subject)"
+            sender= _get_header(header_list, "From") or "unknown"
+            date= _get_header(header_list, "Date") or ""
+
+            preview = _extract_body_preview(details.get("payload", {}), 300)
+
+            if not preview:
+                preview = details.get("snippet", "")[:300]
+
+            labels = details.get("labels", [])
+
+            emails.append({
+                "id": msg_id,
+                "subject": subject,
+                "from": sender,
+                "preview": preview,
+                "date": date,
+                "labels": labels,
+            })
+
+            if mark_read:
+                await _mark_as_read(access_token, msg_id)
+
+        except requests.HTTPError as e:
+            print(f"Error parsing message {msg_id}: {e}")
+            continue
+
+    print(f"Returning {len(emails)} emails")
     return emails
-
-
-def _get_header(headers: List[Dict], name: str) -> Optional[str]:
-    """Extract a specific header from Gmail message headers"""
-    for header in headers:
-        if header.get("name", "").lower() == name.lower():
-            return header.get("value", "")
-    return None
