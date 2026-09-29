@@ -1,10 +1,14 @@
 # database.py
 import asyncpg
 import os
-from typing import Optional, List, Dict, Any
-from datetime import datetime
+from typing import Optional, List
+from dotenv import load_dotenv
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+load_dotenv()
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL is not set in .env")
 
 # Connection pool
 pool: Optional[asyncpg.Pool] = None
@@ -14,12 +18,36 @@ async def init_db():
     """Initialize database connection pool"""
     global pool
     pool = await asyncpg.create_pool(
-        DATABASE_URL,
-        min_size=2,
-        max_size=10,
-        command_timeout=60
+        DATABASE_URL, min_size=2, max_size=10, command_timeout=60
     )
-    print("✅ Database pool created")
+
+    async with pool.acquire() as conn:
+        await conn.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    discord_id BIGINT UNIQUE NOT NULL,
+                    gmail_address TEXT NOT NULL,
+                    app_password TEXT NOT NULL,
+                    channel_id BIGINT,
+                    filters TEXT[] DEFAULT '{}',
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS notification_logs (
+                    id SERIAL PRIMARY KEY,
+                    discord_id BIGINT NOT NULL,
+                    sender VARCHAR(255),
+                    subject VARCHAR(500),
+                    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (discord_id) REFERENCES users(discord_id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id);
+                CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active);
+            """)
+    print("✅ Database initialized")
 
 
 async def close_db():
@@ -32,18 +60,19 @@ async def close_db():
 
 # ─── User Operations ───
 
-async def create_user(discord_id: int, refresh_token: str) -> dict:
-    """Create or update a user"""
+async def save_credentials(discord_id: int, gmail_address: str, app_password: str) -> dict:
+    """Create or update user with Gmail Credentials"""
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
-            INSERT INTO users (discord_id, refresh_token)
-            VALUES ($1, $2)
+            INSERT INTO users (discord_id, gmail_address, app_password)
+            VALUES ($1, $2, $3)
             ON CONFLICT (discord_id)
             DO UPDATE SET
-                refresh_token = EXCLUDED.refresh_token,
+                gmail_address = EXCLUDED.gmail_address,
+                app_password = EXCLUDED.app_password,
                 updated_at = CURRENT_TIMESTAMP
             RETURNING *
-        """, discord_id, refresh_token)
+        """, discord_id, gmail_address, app_password)
         return dict(row)
 
 
@@ -61,7 +90,7 @@ async def get_active_users() -> List[dict]:
     """Get all active users (for background email check)"""
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT discord_id, refresh_token, channel_id, filters
+            SELECT discord_id, gmail_address, app_password, channel_id, filters
             FROM users
             WHERE is_active = TRUE AND channel_id IS NOT NULL
         """)
@@ -197,6 +226,7 @@ async def get_user_stats(discord_id: int) -> dict:
             "channel_id": user['channel_id'],
             "filters": list(user['filters']),
             "is_active": user['is_active'],
+            "gmail_address": user['gmail_address'],
             "created_at": user['created_at'],
             "notification_count": log_count
         }
