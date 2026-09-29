@@ -2,7 +2,8 @@
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     discord_id BIGINT UNIQUE NOT NULL,
-    refresh_token TEXT NOT NULL,
+    gmail_address TEXT NOT NULL,
+    app_password TEXT NOT NULL,
     channel_id BIGINT,
     filters TEXT[] DEFAULT '{}',
     is_active BOOLEAN DEFAULT TRUE,
