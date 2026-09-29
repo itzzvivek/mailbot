@@ -1,207 +1,186 @@
-import asyncio
-import os
-import base64
-from asyncio import timeout
-from idlelib.rpc import response_queue
+import imaplib
+import email
+from email.header import decode_header
+from hmac import new
+from typing import Dict, List
+from datetime import datetime
 
-import requests
-from typing import List, Dict, Optional
-from datetime import datetime, timedelta
+def _decode_header_value(raw: str) -> str:
+    """Decode RFC 2047 encoded header value."""
+    if not raw:
+        return ''
 
-from database import resume_user
-
-GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
-GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
-
-async def refresh_access_token(refresh_token: str) -> Optional[str]:
-    """Get new access token from refresh token"""
-    response = requests.post(
-        "https://oauth2.googleapis.com/token",
-        data = {
-            "client_id": GOOGLE_CLIENT_ID,
-            "client_secret": GOOGLE_CLIENT_SECRET,
-            "refresh_token": refresh_token,
-            "grant_type": "refresh_token"
-        }
-    )
-    if response.status_code != 200:
-        return response.json().get("access_token")
-    print(f"Token refresh failed: {response.text}")
-    return None
-
-def build_query(filters: List[str]) -> str:
-    """Build Gmail search query from user filters"""
-    if not filters:
-        return "is:unread"
-
-    if "all" in filters:
-        return "is:unread"
-
-    query_parts = ["is:unread"]
-
-    if "primary" in filters:
-        query_parts.append("category:primary")
-    if "important" in filters:
-        query_parts.append("is:important")
-    if "social" in filters:
-        query_parts.append("category:social")
-    if "updates" in filters:
-        query_parts.append("category:updates")
-    if "promotions" in filters:
-        query_parts.append("category:promotions")
-    if "forums" in filters:
-        query_parts.append("category:forums")
-
-    return " ".join(query_parts)
-
-def _get_header(headers: List[Dict], name: str) -> Optional[str]:
-    """Extract a specific header from Gmail message headers"""
-    for header in headers:
-        if header.get("name", "").lower() == name.lower():
-            return header.get("value", "")
-    return None
-
-def _extract_body_preview(payload: dict, max_length: int = 300) -> str:
-    """Extract plain-text preview from Gmail message payload"""
     try:
-        if "body" in payload and payload.get("mimeType", "") == "text/plain":
-            data = payload["body"].get["data"]
-            if data:
-                decoded = base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
-                return decoded[:max_length].replace("\n", " ").strip()
+        parts = decode_header(raw)
+        decoded = ""
+        for content, charset in parts:
+            if isinstance(content, bytes):
+                decoded = content.decode(charset or "utf-8", errors="ignore")
+            else:
+                decoded += content
+        return decoded.strip()
+    except Exception:
+        return raw
 
-        parts = payload.get("parts", [])
-        for part in parts:
-            mime = part.get("mimeType", "")
-            if mime == "text/plain":
-                data = part.get("body", {}).get("data")
-                if data:
-                    decoded = base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
-                    return decoded[:max_length].replace("\n", " ").strip()
-
-            if mime.startswith("multipart"):
-                nested = _extract_body_preview(part, max_length)
-                if nested:
-                    return nested
+def _extract_preview(msg, max_length: int = 300) -> str:
+    """Extract plain text preview from email message"""
+    try:
+        if msg.is_multipart():
+            for part in msg.walk():
+                if part.get_content_type() == "text/plain":
+                    payload = part.get_payload(decode=True)
+                    if payload:
+                        text = payload.decode("utf-8", errors="ignore")
+                        return text[:max_length].replace("\n", " ").strip()
+        else:
+            payload = msg.get_payload(decode=True)
+            if payload:
+                text = payload.decode("utf-8", errors="ignore")
+                return text[:max_length].replace("\n", " ").strip()
     except Exception as e:
-        print(f"Error extracting preview: {e}")
+        print(f"⚠️ Preview extraction failed: {e}")
+    return ""
 
 
-async def _fetch_message_list(access_token, query, max_results):
-    """Internal function to fetch the list of message IDs."""
-    headers = {"Authorization": f"Bearer {access_token}"}
-    response = requests.get(
-        "https://gmail.googleapis.com/gmail/v1/users/me/messages",
-        headers=headers,
-        params={"q": query, "maxResults": max_results}
-    )
+def _build_imap_criteria(filters: List[str]) -> list:
+    """
+    Gmail IMAP uses Gmail's own X-GM-RAW extension.
+    Returns criteria list for mail.search().
+    """
+    if not filters or "all" in filters:
+        return ["UNSEEN"]
 
-    if response.status_code != 200:
-        response.raise_for_status()
-    return response.json().get("messages", [])
+    parts = []
+    if "primary" in filters:
+        parts.append("category:primary")
+    if "important" in filters:
+        parts.append("is:important")
+    if "social" in filters:
+        parts.append("category:social")
+    if "updates" in filters:
+        parts.append("category:updates")
+    if "promotions" in filters:
+        parts.append("category:promotions")
+    if "forums" in filters:
+        parts.append("category:forums")
 
-async def _fetch_message_detail(access_token: str, msg_id: str) -> Optional[Dict]:
-    """Internal: Fetch full message details"""
-    headers = {"Authorization": f"Bearer {access_token}"}
-    try:
-        response = requests.get(
-            f"https://gmail/googleapis.com/gmail/v1/users/me/messages/{msg_id}",
-            headers=headers,
-            params={"format": "full"},
-            timeout=15
-        )
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as e:
-        print(f"Error fetching message: {msg_id}:{e}")
-        return None
+    if not parts:
+        return ["UNSEEN"]
 
-async def _mark_as_read(access_token: str, msg_id: str) -> bool:
-    """Internal: Mark message as read (remove UNREAD label)"""
-    headers = {"Authorization": f"Bearer {access_token}"}
-    try:
-        response = requests.post(
-            f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{msg_id}/modify",
-            headers=headers,
-            json={"removeLabelIds": ["UNREAD"]},
-            timeout=10
-        )
-        return response.status_code == 200
-    except requests.RequestException as e:
-        print(f"Failed to mark {msg_id} ad read: {e}")
-        return False
+    # Combine using Gmail's raw search via X-GM-RAW
+    query = "is:unread " + " ".join(parts)
+    return ["X-GM-RAW", f'"{query}"']
 
-async def fetch_new_emails(
-    refresh_token: str,
+
+def fetch_new_emails_sync(
+    gmail_address: str,
+    app_password: str,
     filters: List[str],
     max_results: int = 5,
     mark_read: bool = True
 ) -> List[Dict]:
-    """Fetch new unread emails from Gmail"""
-    access_token = await refresh_access_token(refresh_token)
-    if not access_token:
-        print("Could not obtain access token")
-        return []
+    """
+    Synchronous IMAP fetch. Call inside an executor from async code.
 
-    query = build_query(filters)
-    print(f"Gmail query: {query}")
-
-    messages = []
-    for attempt in range(3):
-        try:
-            messages = await _fetch_message_list(access_token, query, max_results)
-            if messages:
-                print(f"Found {len(messages)} messages")
-                break
-            else:
-                print(f"No messages found (attempt {attempt + 1})/3")
-        except requests.HTTPError as e:
-            print(f"Attempt {attempt + 1} failed: {e}")
-
-        if attempt < 2:
-            await asyncio.sleep(3)
-
-    if not messages:
-        return []
-
+    Returns list of dicts: {id, subject, from, preview, date}
+    """
     emails = []
-    for msg in messages:
-        msg_id = msg.get("id")
-        if not msg_id:
-            continue
+    mail = None
 
-        details = await _fetch_message_detail(access_token, msg_id)
-        if not details:
-            continue
+    try:
+        # Connect to Gmail IMAP
+        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+        mail.login(gmail_address, app_password)
 
-        try:
-            header_list=details.get("headers", []).get("headers", [])
-            subject= _get_header(header_list, "Subject") or "(no subject)"
-            sender= _get_header(header_list, "From") or "unknown"
-            date= _get_header(header_list, "Date") or ""
+        # Select inbox (read-only=False so we can mark as read)
+        mail.select("inbox")
 
-            preview = _extract_body_preview(details.get("payload", {}), 300)
+        # Build search criteria
+        criteria = _build_imap_criteria(filters)
+        print(f"IMAP criteria: {criteria}")
 
-            if not preview:
-                preview = details.get("snippet", "")[:300]
+        status, data = mail.search(None, *criteria)
+        if status != "OK":
+            print(f"IMAP search failed: {status}")
+            return []
 
-            labels = details.get("labels", [])
+        msg_ids = data[0].split()
+        if not msg_ids:
+            print("No messages found")
+            return []
 
-            emails.append({
-                "id": msg_id,
-                "subject": subject,
-                "from": sender,
-                "preview": preview,
-                "date": date,
-                "labels": labels,
-            })
+        # Take the most recent N (Gmail returns oldest first)
+        msg_ids = msg_ids[-max_results:]
+        print(f"Found {len(msg_ids)} messages")
 
-            if mark_read:
-                await _mark_as_read(access_token, msg_id)
+        for msg_id in msg_ids:
+            try:
+                status, msg_data = mail.fetch(msg_id, "(RFC822)")
+                if status != "OK":
+                    continue
 
-        except requests.HTTPError as e:
-            print(f"Error parsing message {msg_id}: {e}")
-            continue
+                raw_email = msg_data[0][1]
+                msg = email.message_from_bytes(raw_email)
+
+                subject = _decode_header_value(msg.get("Subject", "(no subject)"))
+                sender = _decode_header_value(msg.get("From", "Unknown"))
+                date = msg.get("Date", "")
+                preview = _extract_preview(msg, 300)
+
+                emails.append({
+                    "id": msg_id.decode() if isinstance(msg_id, bytes) else str(msg_id),
+                    "subject": subject,
+                    "from": sender,
+                    "preview": preview,
+                    "date": date,
+                })
+
+                # Mark as read
+                if mark_read:
+                    mail.store(msg_id, "+FLAGS", "\\Seen")
+
+            except Exception as e:
+                print(f"Error parsing message {msg_id}: {e}")
+                continue
+
+    except imaplib.IMAP4.error as e:
+        print(f"IMAP login/search error: {e}")
+    except Exception as e:
+        print(f"Unexpected IMAP error: {e}")
+    finally:
+        if mail:
+            try:
+                mail.close()
+            except Exception:
+                pass
+            try:
+                mail.logout()
+            except Exception:
+                pass
 
     print(f"Returning {len(emails)} emails")
     return emails
+
+
+async def fetch_new_emails(
+    gmail_address: str,
+    app_password: str,
+    filters: List[str],
+    max_results: int = 5,
+    mark_read: bool = True
+) -> List[Dict]:
+    """
+    Async wrapper around the synchronous IMAP call.
+    Runs IMAP in a thread so it doesn't block the event loop.
+    """
+    import asyncio
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None,
+        fetch_new_emails_sync,
+        gmail_address,
+        app_password,
+        filters,
+        max_results,
+        mark_read,
+    )
