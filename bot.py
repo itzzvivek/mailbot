@@ -1,10 +1,14 @@
 import os
 import re
 import logging
+from datetime import datetime
+from email.utils import parsedate_to_datetime
+
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
+from unicodedata import category
 
 from database import (
     init_db, close_db, get_user, get_active_users, save_credentials,
@@ -46,6 +50,30 @@ async def on_disconnect():
 def clean_app_password(raw: str) -> str:
     """Strip spaces — Google shows them as 'abcd efgh ijkl mnop'"""
     return re.sub(r"\s+", "", raw)
+
+def format_email_time(date_str: str) -> str:
+    """Convert email date header into gmail-style short time"""
+    try:
+        dt = parsedate_to_datetime(date_str)
+        now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+        delta_days = (now - dt).days
+
+        if dt.date() == now.date():
+            return dt.strftime("%I:%M %p").lstrip("0")
+        elif delta_days < 7:
+            return dt.strftime("%a %I:%M %p").lstrip("0")
+        else:
+            return dt.strftime("%b %d")
+    except Exception:
+        return date_str or "Unknown"
+
+def build_gmail_url(message_id: str) -> str:
+    return f"https://mail.google.com/mail/u/0/#inbox/{message_id}"
+
+def format_category(labels: list) -> str:
+    if not labels:
+        return "Inbox"
+    return "🏷️ " + ", ".join(labels[:3])
 
 
 # ─── Commands ───
@@ -355,12 +383,25 @@ async def check_emails():
                     continue
 
                 for em in emails:
+                    category_str=format_category(em.get("labels", []))
+                    time_str=format_email_time(em.get("date", ""))
+                    gmail_url=build_gmail_url(em["id"])
+
+
                     embed = discord.Embed(
                         title=em['subject'][:256] or "(no subject)",
                         description=em['preview'][:300] or "(no preview)",
                         color=discord.Color.blurple(),
+                        url=gmail_url,
                     )
                     embed.set_author(name=em['from'])
+                    embed.add_field(name="Category", value=category_str, inline=True)
+                    embed.add_field(name="Time", value=time_str, inline=True)
+                    embed.add_field(
+                        name="Open",
+                        value=f"[Open in Gmail]({gmail_url})",
+                        inline=True,
+                    )
                     await channel.send(embed=embed)
                     await log_notification(
                         user['discord_id'], em['from'], em['subject']
@@ -377,4 +418,4 @@ async def check_emails():
 # ─── Run ───
 
 if __name__ == "__main__":
-    bot.run(os.getenv("DISCORD_TOKEN"))
+    bot.run(os.getenv("DISCORD_BOT_TOKEN"))

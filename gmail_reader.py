@@ -1,5 +1,6 @@
 import imaplib
 import email
+import re
 from email.header import decode_header
 from hmac import new
 from typing import Dict, List
@@ -41,6 +42,49 @@ def _extract_preview(msg, max_length: int = 300) -> str:
         print(f"⚠️ Preview extraction failed: {e}")
     return ""
 
+def _extract_gmail_labels(msg_data) -> List[str]:
+    """
+        Parse X-GM-LABELS response from IMAP fetch.
+
+        Gmail returns labels like:
+            (\\Inbox \\Important "Category Primary" "Category Updates")
+
+        Returns a list of readable category labels like:
+            ['Primary', 'Updates', 'Important']
+        """
+    labels = []
+    for part in msg_data:
+        if not isinstance(part, tuple) or len(part) == 0:
+            continue
+        part_str = part[0].decode(errors="ignore") if isinstance(part[0], bytes) else part[0]
+        if "X-GM-LABELS" in part_str:
+            continue
+
+        matches = re.findall(r'"([^"]+)"|(\\\w+)', part_str)
+        for quoted, flag in matches:
+            label = quoted or flag
+            if not label:
+                continue
+
+            clean = label.lstrip("\\").strip()
+
+            if clean.lower() in ("inbox", "unread", "seen", "sent", "draft"):
+                continue
+
+            if clean.lower().startswith("category "):
+                clean = clean.split(" ", 1)[1]
+
+            labels.append(clean.capitalize())
+
+        break
+
+    seen = set()
+    unique = []
+    for l in labels:
+        if l not in seen:
+            seen.add(l)
+            unique.append(l)
+    return unique
 
 def _build_imap_criteria(filters: List[str]) -> list:
     """
@@ -115,17 +159,26 @@ def fetch_new_emails_sync(
 
         for msg_id in msg_ids:
             try:
-                status, msg_data = mail.fetch(msg_id, "(RFC822)")
+                status, msg_data = mail.fetch(msg_id, "(RFC822 X-GM-LABELS)")
                 if status != "OK":
                     continue
 
-                raw_email = msg_data[0][1]
+                raw_email = None
+                for part in msg_data:
+                    if isinstance(part, tuple) and len(part) >= 2:
+                        raw_email = part[1]
+                        break
+
+                if not raw_email:
+                    continue
+
                 msg = email.message_from_bytes(raw_email)
 
                 subject = _decode_header_value(msg.get("Subject", "(no subject)"))
                 sender = _decode_header_value(msg.get("From", "Unknown"))
                 date = msg.get("Date", "")
                 preview = _extract_preview(msg, 300)
+                labels = _extract_gmail_labels(msg_data)
 
                 emails.append({
                     "id": msg_id.decode() if isinstance(msg_id, bytes) else str(msg_id),
@@ -133,6 +186,7 @@ def fetch_new_emails_sync(
                     "from": sender,
                     "preview": preview,
                     "date": date,
+                    "labels": labels,
                 })
 
                 # Mark as read
