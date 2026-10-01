@@ -28,7 +28,8 @@ services:
     restart: unless-stopped
     environment:
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: ${DATABASE_URL}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       PORT: 8000
     depends_on:
       postgres:
