@@ -93,11 +93,19 @@ async def get_active_users() -> List[dict]:
     """Get all active users (for background email check)"""
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT discord_id, gmail_address, app_password, channel_id, filters
+            SELECT discord_id, gmail_address, app_password, channel_id, filters, last_uid
             FROM users
             WHERE is_active = TRUE AND channel_id IS NOT NULL
         """)
-        return [dict(row) for row in rows]
+        users = []
+        for row in rows:
+            u = dict(row)
+            try:
+                u['app_password'] = decrypt(u['app_password'])
+                users.append(u)
+            except ValueError as e:
+                print(f"Skipping user {u['discord_id']}: {e}")
+        return users
 
 
 async def set_channel(discord_id: int, channel_id: int) -> bool:
