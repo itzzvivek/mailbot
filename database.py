@@ -1,8 +1,7 @@
-# database.py
 import asyncpg
 import os
 from typing import Optional, List
-from crypto import encrypt, decrypt
+from encryption.crypto import encrypt, decrypt
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -246,7 +245,7 @@ async def get_user(discord_id: int) -> Optional[dict]:
     """Get user WITHOUT decrypted password"""
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
-            SELECT id, discord_id, gmail_address, channel_id, filters, is_active, created-at, updated-at
+            SELECT id, discord_id, gmail_address, channel_id, filters, is_active, created_at, updated_at
             FROM users WHERE discord_id = $1
         """, discord_id)
         return dict(row) if row else None
