@@ -275,3 +275,19 @@ async def get_active_users() -> List[dict]:
                 # Skip users whose passwords can't be decrypted
                 print(f"⚠️ Skipping user {u['discord_id']}: {e}")
         return users
+
+async def get_last_uid(discord_id: int) -> int:
+    """Return the highest UID the bot has already seen for this user"""
+    async with pool.acquire() as conn:
+        val = await conn.fetchval("SELECT last_uid FROM users WHERE discord_id = $1", discord_id)
+        return val or 0
+
+async def update_last_uid(discord_id: int, uid: int) -> None:
+    """store the highest UID seen so far"""
+    async with pool.acquire() as conn:
+        await conn.execute("""
+        UPDATE users
+        SET last_uid = $1
+        updated_at = CURRENT_TIMESTAMP
+        WHERE discord_id = $2"""
+        , uid, discord_id)

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
     channel_id BIGINT,
     filters TEXT[] DEFAULT '{}',
     is_active BOOLEAN DEFAULT TRUE,
+    last_uid BIGINT DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
