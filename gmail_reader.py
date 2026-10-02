@@ -120,6 +120,7 @@ def fetch_new_emails_sync(
     gmail_address: str,
     app_password: str,
     filters: List[str],
+    last_uid: int = 0,
     max_results: int = 5,
     mark_read: bool = True
 ) -> List[Dict]:
@@ -127,8 +128,15 @@ def fetch_new_emails_sync(
     Synchronous IMAP fetch. Call inside an executor from async code.
 
     Returns list of dicts: {id, subject, from, preview, date}
+
+    fetch only emails with UID > last_uid
+
+    Return (emails, new_last_uid)
+        emails: list of new email dicts
+        new_last_uid: the highest UID seen, to save for next run
     """
     emails = []
+    highest_uid=last_uid
     mail = None
 
     try:
@@ -139,27 +147,41 @@ def fetch_new_emails_sync(
         # Select inbox (read-only=False so we can mark as read)
         mail.select("inbox")
 
+        if last_uid == 0:
+            status, data = mail.uid("search", None, 'All')
+            if status == "Ok" and data[0]:
+                uids = data[0].split()
+                if uids:
+                    highest_uid = int(uids[-1])
+            print(f"First run -- bootstrapped last_uid={highest_uid}")
+            return [], highest_uid
+
         # Build search criteria
         criteria = _build_imap_criteria(filters)
         print(f"IMAP criteria: {criteria}")
 
-        status, data = mail.search(None, *criteria)
+        uid_range = f"{last_uid + 1}:*"
+
+        #UID SEARCH with criteria
+        status, data = mail.uid("search", None, *criteria, f"UID {uid_range}")
         if status != "OK":
-            print(f"IMAP search failed: {status}")
-            return []
+            print(f"UID search failed: {status}")
+            return [], highest_uid
 
-        msg_ids = data[0].split()
-        if not msg_ids:
-            print("No messages found")
-            return []
+        uids = data[0].split()
+        if not uids:
+            print("No new messages")
+            return [], highest_uid
 
-        # Take the most recent N (Gmail returns oldest first)
-        msg_ids = msg_ids[-max_results:]
-        print(f"Found {len(msg_ids)} messages")
+        #Only process up to max_results pre cycle
+        uids = uids[-max_results:]
+        print(f"Found {len(uids)} new messages")
 
-        for msg_id in msg_ids:
+        for uid in uids:
+            uid_int = int(uid)
             try:
-                status, msg_data = mail.fetch(msg_id, "(RFC822 X-GM-LABELS)")
+                #fetch by UID, not sequence number
+                status, msg_data = mail.uid("fetch", uid, "(RFC822 X-GM-LABELS)")
                 if status != "OK":
                     continue
 
@@ -168,20 +190,20 @@ def fetch_new_emails_sync(
                     if isinstance(part, tuple) and len(part) >= 2:
                         raw_email = part[1]
                         break
-
                 if not raw_email:
                     continue
 
-                msg = email.message_from_bytes(raw_email)
 
-                subject = _decode_header_value(msg.get("Subject", "(no subject)"))
+                msg = email.message_from_bytes(raw_email)
+                subject = _decode_header_value(msg.get("Subject", "(nu_subject"))
                 sender = _decode_header_value(msg.get("From", "Unknown"))
                 date = msg.get("Date", "")
                 preview = _extract_preview(msg, 300)
                 labels = _extract_gmail_labels(msg_data)
 
                 emails.append({
-                    "id": msg_id.decode() if isinstance(msg_id, bytes) else str(msg_id),
+                    "id": str(uid_int),
+                    "uid": uid_int,
                     "subject": subject,
                     "from": sender,
                     "preview": preview,
@@ -189,40 +211,37 @@ def fetch_new_emails_sync(
                     "labels": labels,
                 })
 
-                # Mark as read
                 if mark_read:
-                    mail.store(msg_id, "+FLAGS", "\\Seen")
+                    mail.uid("store", uid, "+FLAGS", "\\Seen")
 
+                #Track the highest UID we've seen
+                if uid_int > highest_uid:
+                    highest_uid = uid_int
             except Exception as e:
-                print(f"Error parsing message {msg_id}: {e}")
+                print(f"Error parsing email{uid}: {e}")
                 continue
-
     except imaplib.IMAP4.error as e:
-        print(f"IMAP login/search error: {e}")
+        print(f"IMAP error:{e}")
     except Exception as e:
-        print(f"Unexpected IMAP error: {e}")
+        print(f"Unexcepted error:{e}")
     finally:
         if mail:
-            try:
-                mail.close()
-            except Exception:
-                pass
-            try:
-                mail.logout()
-            except Exception:
-                pass
+            try: mail.close()
+            except Exception: pass
+            try: mail.logout()
+            except Exception: pass
 
-    print(f"Returning {len(emails)} emails")
-    return emails
-
+    print(f"Returning {len(emails)} emails (highest uid={highest_uid})")
+    return emails, highest_uid
 
 async def fetch_new_emails(
     gmail_address: str,
     app_password: str,
     filters: List[str],
+    last_uid: int = 0,
     max_results: int = 5,
-    mark_read: bool = True
-) -> List[Dict]:
+    mark_read: bool = True,
+) -> tuple:
     """
     Async wrapper around the synchronous IMAP call.
     Runs IMAP in a thread so it doesn't block the event loop.
@@ -235,6 +254,7 @@ async def fetch_new_emails(
         gmail_address,
         app_password,
         filters,
+        last_uid,
         max_results,
         mark_read,
     )
