@@ -13,7 +13,7 @@ from unicodedata import category
 from database import (
     init_db, close_db, get_user, get_active_users, save_credentials,
     set_channel, add_filter, remove_filter, pause_user, resume_user,
-    delete_user, log_notification, get_user_stats,
+    delete_user, log_notification, get_user_stats, update_last_uid
 )
 from gmail_reader import fetch_new_emails
 
@@ -369,13 +369,18 @@ async def check_emails():
                 continue
 
             try:
-                emails = await fetch_new_emails(
+                emails, new_last_uid = await fetch_new_emails(
                     gmail_address=user['gmail_address'],
                     app_password=user['app_password'],
                     filters=list(user['filters']) if user['filters'] else [],
+                    last_uid=user.get('last_uid', 0),
                     max_results=5,
                     mark_read=True,
                 )
+
+                # persist the new UID  watermark
+                if new_last_uid > user.get('last_uid', 0):
+                    await update_last_uid(user['discord_id'], new_last_uid)
 
                 channel = bot.get_channel(user['channel_id'])
                 if not channel:
