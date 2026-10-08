@@ -47,7 +47,7 @@ async def init_db():
                 CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id);
                 CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active);
             """)
-    print("✅ Database initialized")
+    print("Database initialized")
 
 
 async def close_db():
@@ -55,7 +55,7 @@ async def close_db():
     global pool
     if pool:
         await pool.close()
-        print("✅ Database pool closed")
+        print("Database pool closed")
 
 
 # ─── User Operations ───
@@ -77,14 +77,13 @@ async def save_credentials(discord_id: int, gmail_address: str, app_password: st
         """, discord_id, gmail_address, encrypted_password)
         return dict(row) if row else {}
 
-
 async def get_user(discord_id: int) -> Optional[dict]:
-    """Get user by Discord ID"""
+    """Get user WITHOUT decrypted password"""
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT * FROM users WHERE discord_id = $1",
-            discord_id
-        )
+        row = await conn.fetchrow("""
+            SELECT id, discord_id, gmail_address, channel_id, filters, is_active, created_at, updated_at
+            FROM users WHERE discord_id = $1
+        """, discord_id)
         return dict(row) if row else None
 
 
@@ -241,15 +240,6 @@ async def get_user_stats(discord_id: int) -> dict:
             "notification_count": log_count
         }
 
-async def get_user(discord_id: int) -> Optional[dict]:
-    """Get user WITHOUT decrypted password"""
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-            SELECT id, discord_id, gmail_address, channel_id, filters, is_active, created_at, updated_at
-            FROM users WHERE discord_id = $1
-        """, discord_id)
-        return dict(row) if row else None
-
 async def get_user_with_password(discord_id: int) -> Optional[dict]:
     """Get user WITH decrypted password"""
     async with pool.acquire() as conn:
@@ -264,25 +254,6 @@ async def get_user_with_password(discord_id: int) -> Optional[dict]:
         user['app_password'] = decrypt(user['app_password'])
         return user
 
-async def get_active_users() -> List[dict]:
-    """Get all active users — decrypts passwords for IMAP use"""
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT discord_id, gmail_address, app_password, channel_id, filters
-            FROM users
-            WHERE is_active = TRUE AND channel_id IS NOT NULL
-        """)
-        users = []
-        for row in rows:
-            u = dict(row)
-            try:
-                u['app_password'] = decrypt(u['app_password'])
-                users.append(u)
-            except ValueError as e:
-                # Skip users whose passwords can't be decrypted
-                print(f"⚠️ Skipping user {u['discord_id']}: {e}")
-        return users
-
 async def get_last_uid(discord_id: int) -> int:
     """Return the highest UID the bot has already seen for this user"""
     async with pool.acquire() as conn:
@@ -293,8 +264,7 @@ async def update_last_uid(discord_id: int, uid: int) -> None:
     """store the highest UID seen so far"""
     async with pool.acquire() as conn:
         await conn.execute("""
-        UPDATE users
-        SET last_uid = $1
-        updated_at = CURRENT_TIMESTAMP
-        WHERE discord_id = $2"""
+            UPDATE users
+            SET last_uid = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE discord_id = $2"""
         , uid, discord_id)

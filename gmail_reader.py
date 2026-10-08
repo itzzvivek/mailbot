@@ -1,30 +1,32 @@
 import imaplib
 import email
 import re
+import asyncio
 from email.header import decode_header
-from hmac import new
 from typing import Dict, List
-from datetime import datetime
+
+
+# Header / body helpers
 
 def _decode_header_value(raw: str) -> str:
     """Decode RFC 2047 encoded header value."""
     if not raw:
-        return ''
-
+        return ""
     try:
         parts = decode_header(raw)
         decoded = ""
         for content, charset in parts:
             if isinstance(content, bytes):
-                decoded = content.decode(charset or "utf-8", errors="ignore")
+                decoded += content.decode(charset or "utf-8", errors="ignore")
             else:
                 decoded += content
         return decoded.strip()
     except Exception:
         return raw
 
+
 def _extract_preview(msg, max_length: int = 300) -> str:
-    """Extract plain text preview from email message"""
+    """Extract plain text preview from email message."""
     try:
         if msg.is_multipart():
             for part in msg.walk():
@@ -42,24 +44,27 @@ def _extract_preview(msg, max_length: int = 300) -> str:
         print(f"⚠️ Preview extraction failed: {e}")
     return ""
 
+
+# Gmail label parsing
+
 def _extract_gmail_labels(msg_data) -> List[str]:
     """
-        Parse X-GM-LABELS response from IMAP fetch.
-
-        Gmail returns labels like:
-            (\\Inbox \\Important "Category Primary" "Category Updates")
-
-        Returns a list of readable category labels like:
-            ['Primary', 'Updates', 'Important']
-        """
+    Parse X-GM-LABELS response from IMAP fetch.
+    Gmail returns labels like:
+        (\\Inbox \\Important "Category Primary" "Category Updates")
+    Returns readable labels like: ['Primary', 'Updates', 'Important']
+    """
     labels = []
     for part in msg_data:
         if not isinstance(part, tuple) or len(part) == 0:
             continue
-        part_str = part[0].decode(errors="ignore") if isinstance(part[0], bytes) else part[0]
-        if "X-GM-LABELS" in part_str:
+        part_str = part[0].decode(errors="ignore") if isinstance(part[0], bytes) else str(part[0])
+
+        #FIXED: process parts that DO contain X-GM-LABELS
+        if "X-GM-LABELS" not in part_str:
             continue
 
+        # Extract quoted labels and bare flags
         matches = re.findall(r'"([^"]+)"|(\\\w+)', part_str)
         for quoted, flag in matches:
             label = quoted or flag
@@ -68,9 +73,13 @@ def _extract_gmail_labels(msg_data) -> List[str]:
 
             clean = label.lstrip("\\").strip()
 
-            if clean.lower() in ("inbox", "unread", "seen", "sent", "draft"):
+            # Skip boring system flags
+            if clean.lower() in ("inbox", "unread", "seen", "sent", "draft", "starred"):
+                if clean.lower() == "starred":
+                    labels.append("Starred")
                 continue
 
+            # "Category Updates" → "Updates"
             if clean.lower().startswith("category "):
                 clean = clean.split(" ", 1)[1]
 
@@ -78,6 +87,7 @@ def _extract_gmail_labels(msg_data) -> List[str]:
 
         break
 
+    # Deduplicate while preserving order
     seen = set()
     unique = []
     for l in labels:
@@ -86,13 +96,12 @@ def _extract_gmail_labels(msg_data) -> List[str]:
             unique.append(l)
     return unique
 
+
+# Search criteria builder
 def _build_imap_criteria(filters: List[str]) -> list:
-    """
-    Gmail IMAP uses Gmail's own X-GM-RAW extension.
-    Returns criteria list for mail.search().
-    """
+    """Build Gmail IMAP search criteria using X-GM-RAW extension."""
     if not filters or "all" in filters:
-        return ["UNSEEN"]
+        return ["ALL"]  # not UNSEEN — we want UID-based, not flag-based
 
     parts = []
     if "primary" in filters:
@@ -109,12 +118,13 @@ def _build_imap_criteria(filters: List[str]) -> list:
         parts.append("category:forums")
 
     if not parts:
-        return ["UNSEEN"]
+        return ["ALL"]
 
-    # Combine using Gmail's raw search via X-GM-RAW
     query = "is:unread " + " ".join(parts)
     return ["X-GM-RAW", f'"{query}"']
 
+
+# Main sync function
 
 def fetch_new_emails_sync(
     gmail_address: str,
@@ -122,67 +132,68 @@ def fetch_new_emails_sync(
     filters: List[str],
     last_uid: int = 0,
     max_results: int = 5,
-    mark_read: bool = True
-) -> List[Dict]:
+    mark_read: bool = True,
+) -> tuple:
     """
-    Synchronous IMAP fetch. Call inside an executor from async code.
-
-    Returns list of dicts: {id, subject, from, preview, date}
-
-    fetch only emails with UID > last_uid
-
-    Return (emails, new_last_uid)
-        emails: list of new email dicts
-        new_last_uid: the highest UID seen, to save for next run
+    Fetch only emails with UID > last_uid.
+    Returns (emails, new_last_uid).
     """
     emails = []
-    highest_uid=last_uid
+    highest_uid = last_uid
     mail = None
 
     try:
-        # Connect to Gmail IMAP
         mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
         mail.login(gmail_address, app_password)
-
-        # Select inbox (read-only=False so we can mark as read)
         mail.select("inbox")
 
+        #First run: bootstrap to current max UID
         if last_uid == 0:
-            status, data = mail.uid("search", None, 'All')
-            if status == "Ok" and data[0]:
+            print("First run — bootstrapping...")
+            status, data = mail.uid("search", None, "ALL")  # ✅ "OK" and "ALL"
+            if status == "OK" and data and data[0]:
                 uids = data[0].split()
                 if uids:
                     highest_uid = int(uids[-1])
-            print(f"First run -- bootstrapped last_uid={highest_uid}")
+            print(f"Bootstrapped last_uid={highest_uid}")
             return [], highest_uid
 
-        # Build search criteria
-        criteria = _build_imap_criteria(filters)
-        print(f"IMAP criteria: {criteria}")
-
+        #Subsequent runs: fetch UID > last_uid
         uid_range = f"{last_uid + 1}:*"
 
-        #UID SEARCH with criteria
-        status, data = mail.uid("search", None, *criteria, f"UID {uid_range}")
-        if status != "OK":
-            print(f"UID search failed: {status}")
+        if not filters or "all" in filters:
+            #Native UID search (works reliably with Gmail)
+            print(f"UID search: UID {uid_range}")
+            status, data = mail.uid("search", None, f"UID {uid_range}")
+            if status != "OK":
+                print(f"UID search failed: {status}")
+                return [], highest_uid
+            uid_list = data[0].split() if data and data[0] else []
+        else:
+            #Gmail-specific filter, then client-side UID filter
+            criteria = _build_imap_criteria(filters)
+            print(f"🔍 Gmail search: {criteria}")
+            status, data = mail.uid("search", None, *criteria)
+            if status != "OK":
+                print(f"Gmail search failed: {status}")
+                return [], highest_uid
+            all_uids = [int(u) for u in data[0].split()] if data and data[0] else []
+            uid_list = [str(u).encode() for u in all_uids if u > last_uid]
+
+        if not uid_list:
+            print("📭 No new messages")
             return [], highest_uid
 
-        uids = data[0].split()
-        if not uids:
-            print("No new messages")
-            return [], highest_uid
+        # Cap at max_results per cycle (take the newest)
+        uid_list = uid_list[-max_results:]
+        print(f"📬 Found {len(uid_list)} new messages")
 
-        #Only process up to max_results pre cycle
-        uids = uids[-max_results:]
-        print(f"Found {len(uids)} new messages")
-
-        for uid in uids:
+        for uid in uid_list:
             uid_int = int(uid)
             try:
-                #fetch by UID, not sequence number
                 status, msg_data = mail.uid("fetch", uid, "(RFC822 X-GM-LABELS)")
                 if status != "OK":
+                    print(f"Fetch failed for UID {uid}: {status}")
                     continue
 
                 raw_email = None
@@ -191,11 +202,11 @@ def fetch_new_emails_sync(
                         raw_email = part[1]
                         break
                 if not raw_email:
+                    print(f"No raw email for UID {uid}")
                     continue
 
-
                 msg = email.message_from_bytes(raw_email)
-                subject = _decode_header_value(msg.get("Subject", "(nu_subject"))
+                subject = _decode_header_value(msg.get("Subject", "(no subject)"))
                 sender = _decode_header_value(msg.get("From", "Unknown"))
                 date = msg.get("Date", "")
                 preview = _extract_preview(msg, 300)
@@ -214,25 +225,34 @@ def fetch_new_emails_sync(
                 if mark_read:
                     mail.uid("store", uid, "+FLAGS", "\\Seen")
 
-                #Track the highest UID we've seen
+            except Exception as e:
+                print(f"Error parsing UID {uid}: {e}")
+                continue
+            finally:
+                # Always advance highest_UID, even if fetch/parse failed
                 if uid_int > highest_uid:
                     highest_uid = uid_int
-            except Exception as e:
-                print(f"Error parsing email{uid}: {e}")
-                continue
+
     except imaplib.IMAP4.error as e:
-        print(f"IMAP error:{e}")
+        print(f"IMAP error: {e}")
     except Exception as e:
-        print(f"Unexcepted error:{e}")
+        print(f"Unexpected error: {e}")
     finally:
         if mail:
-            try: mail.close()
-            except Exception: pass
-            try: mail.logout()
-            except Exception: pass
+            try:
+                mail.close()
+            except Exception:
+                pass
+            try:
+                mail.logout()
+            except Exception:
+                pass
 
-    print(f"Returning {len(emails)} emails (highest uid={highest_uid})")
+    print(f"✅ Returning {len(emails)} emails (highest UID: {highest_uid})")
     return emails, highest_uid
+
+
+# Async wrapper
 
 async def fetch_new_emails(
     gmail_address: str,
@@ -242,11 +262,7 @@ async def fetch_new_emails(
     max_results: int = 5,
     mark_read: bool = True,
 ) -> tuple:
-    """
-    Async wrapper around the synchronous IMAP call.
-    Runs IMAP in a thread so it doesn't block the event loop.
-    """
-    import asyncio
+    """Async wrapper — runs blocking IMAP in a thread."""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
         None,

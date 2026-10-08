@@ -9,6 +9,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: ${POSTGRES_HOST}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./mailbot.sql:/docker-entrypoint-initdb.d/init.sql
@@ -37,6 +38,7 @@ services:
     networks:
       - mailbot-network
     volumes:
+      - .:/app
       - ./logs:/app/logs
 
 volumes:

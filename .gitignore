@@ -23,4 +23,4 @@ tests/
 docs/
 *.md
 !README.md
-test_gmail.py
+tests/test_new_emails.py

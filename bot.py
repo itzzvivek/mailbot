@@ -357,69 +357,141 @@ async def help_command(interaction: discord.Interaction):
 
 # ─── Background Loop ───
 
+# @tasks.loop(seconds=60)
+# async def check_emails():
+#     """Check Gmail for all active users every 60 seconds"""
+#     try:
+#         users = await get_active_users()
+#         log.info(f"Checking {len(users)} active users...")
+#
+#         for user in users:
+#             if not user['channel_id']:
+#                 continue
+#
+#             try:
+#                 emails, new_last_uid = await fetch_new_emails(
+#                     gmail_address=user['gmail_address'],
+#                     app_password=user['app_password'],
+#                     filters=list(user['filters']) if user['filters'] else [],
+#                     last_uid=user.get('last_uid', 0),
+#                     max_results=5,
+#                     mark_read=True,
+#                 )
+#
+#                 # persist the new UID  watermark
+#                 if new_last_uid > user.get('last_uid', 0):
+#                     await update_last_uid(user['discord_id'], new_last_uid)
+#
+#                 channel = bot.get_channel(user['channel_id'])
+#                 if not channel:
+#                     log.warning(f"Channel {user['channel_id']} not found")
+#                     continue
+#
+#                 for em in emails:
+#                     category_str=format_category(em.get("labels", []))
+#                     time_str=format_email_time(em.get("date", ""))
+#                     gmail_url=build_gmail_url(em["id"])
+#
+#
+#                     embed = discord.Embed(
+#                         title=em['subject'][:256] or "(no subject)",
+#                         description=em['preview'][:300] or "(no preview)",
+#                         color=discord.Color.blurple(),
+#                         url=gmail_url,
+#                     )
+#                     embed.set_author(name=em['from'])
+#                     embed.add_field(name="Category", value=category_str, inline=True)
+#                     embed.add_field(name="Time", value=time_str, inline=True)
+#                     embed.add_field(
+#                         name="Open",
+#                         value=f"[Open in Gmail]({gmail_url})",
+#                         inline=True,
+#                     )
+#                     await channel.send(embed=embed)
+#                     await log_notification(
+#                         user['discord_id'], em['from'], em['subject']
+#                     )
+#                     log.info(f"Sent: {em['subject'][:50]}")
+#
+#             except Exception as e:
+#                 log.error(f"Error for user {user['discord_id']}: {e}")
+#
+#     except Exception as e:
+#         log.error(f"Major error in check_emails loop: {e}")
+
 @tasks.loop(seconds=60)
 async def check_emails():
     """Check Gmail for all active users every 60 seconds"""
     try:
         users = await get_active_users()
-        log.info(f"Checking {len(users)} active users...")
+        log.info(f"🔍 Checking {len(users)} active users...")
 
         for user in users:
-            if not user['channel_id']:
+            log.info(f"👤 Processing user {user['discord_id']}")
+            log.info(f"   channel_id={user.get('channel_id')}")
+            log.info(f"   filters={user.get('filters')}")
+            log.info(f"   last_uid={user.get('last_uid')}")
+
+            if not user.get("channel_id"):
+                log.warning(f"⚠️ Skipping {user['discord_id']} — no channel set")
                 continue
 
             try:
-                emails, new_last_uid = await fetch_new_emails(
-                    gmail_address=user['gmail_address'],
-                    app_password=user['app_password'],
-                    filters=list(user['filters']) if user['filters'] else [],
-                    last_uid=user.get('last_uid', 0),
+                log.info("📥 Calling fetch_new_emails...")
+                emails, new_uid = await fetch_new_emails(
+                    gmail_address=user["gmail_address"],
+                    app_password=user["app_password"],
+                    filters=list(user["filters"]) if user["filters"] else [],
+                    last_uid=user.get("last_uid", 0),
                     max_results=5,
-                    mark_read=True,
+                    mark_read=False,
                 )
+                log.info(f"📥 Got {len(emails)} emails, new_uid={new_uid}")
 
-                # persist the new UID  watermark
-                if new_last_uid > user.get('last_uid', 0):
-                    await update_last_uid(user['discord_id'], new_last_uid)
-
-                channel = bot.get_channel(user['channel_id'])
-                if not channel:
-                    log.warning(f"Channel {user['channel_id']} not found")
+                if not emails:
+                    log.info("⏭️ No new emails to send")
+                    # Still save the new_uid (in case we advanced past old emails)
+                    if new_uid > user.get("last_uid", 0):
+                        await update_last_uid(user["discord_id"], new_uid)
                     continue
 
+                channel = bot.get_channel(user["channel_id"])
+                if channel is None:
+                    try:
+                        channel = await bot.fetch_channel(user["channel_id"])
+                    except Exception as e:
+                        log.error(f"❌ Cannot fetch channel {user['channel_id']}: {e}")
+                        continue
+
+                log.info(f"📢 Sending to #{channel.name}...")
+
                 for em in emails:
-                    category_str=format_category(em.get("labels", []))
-                    time_str=format_email_time(em.get("date", ""))
-                    gmail_url=build_gmail_url(em["id"])
-
-
                     embed = discord.Embed(
-                        title=em['subject'][:256] or "(no subject)",
-                        description=em['preview'][:300] or "(no preview)",
+                        title=em["subject"][:256] or "(no subject)",
+                        description=em["preview"][:300] or "(no preview)",
                         color=discord.Color.blurple(),
-                        url=gmail_url,
                     )
-                    embed.set_author(name=em['from'])
-                    embed.add_field(name="Category", value=category_str, inline=True)
-                    embed.add_field(name="Time", value=time_str, inline=True)
-                    embed.add_field(
-                        name="Open",
-                        value=f"[Open in Gmail]({gmail_url})",
-                        inline=True,
-                    )
+                    embed.set_author(name=em["from"])
                     await channel.send(embed=embed)
+                    log.info(f"📤 Sent: {em['subject'][:60]}")
                     await log_notification(
-                        user['discord_id'], em['from'], em['subject']
+                        user["discord_id"], em["from"], em["subject"]
                     )
-                    log.info(f"Sent: {em['subject'][:50]}")
+
+                # Save watermark AFTER successful sends
+                if new_uid > user.get("last_uid", 0):
+                    await update_last_uid(user["discord_id"], new_uid)
+                    log.info(f"💾 Updated last_uid to {new_uid}")
 
             except Exception as e:
-                log.error(f"Error for user {user['discord_id']}: {e}")
+                import traceback
+                log.error(f"❌ Error for user {user['discord_id']}: {e}")
+                traceback.print_exc()
 
     except Exception as e:
-        log.error(f"Major error in check_emails loop: {e}")
-
-
+        import traceback
+        log.error(f"🔥 Major error in check_emails loop: {e}")
+        traceback.print_exc()
 # ─── Run ───
 
 if __name__ == "__main__":
