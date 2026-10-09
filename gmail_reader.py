@@ -195,24 +195,25 @@ def fetch_new_emails_sync(
             uid_range = f"{last_uid + 1}:*"
 
             # UID SEARCH with the range
-            if criteria and criteria[0] == "X-GM-RAW":
-                raw_query = criteria[1].strip('"')
-                raw_query = f"{raw_query} UID {uid_range}"
-                search_args = ["X-GM-RAW", f'"{raw_query}"']
-            else:
-                search_args = criteria + [f"UID {uid_range}"]
+            # if criteria and criteria[0] == "X-GM-RAW":
+            #     raw_query = criteria[1].strip('"')
+            #     raw_query = f"{raw_query} UID {uid_range}"
+            #     search_args = ["X-GM-RAW", f'"{raw_query}"']
+            # else:
+            search_args = criteria + [f"UID {uid_range}"]
 
             status, data = mail.uid("search", None, *search_args)
             if status != "OK":
                 print(f"Incremental search failed: {status}")
                 return [], highest_uid
 
-            uids = data[0].split()
-            if not uids:
+            all_uids = data[0].split()
+            new_uids = [u for u in all_uids if int(u) > last_uid]
+            if not new_uids:
                 print("No new emails")
                 return [], highest_uid
 
-            uids = uids[-max_results:]
+            uids = new_uids[-max_results:]
             print(f"Found {len(uids)} new emails")
 
         # ─── FETCH EACH EMAIL ───

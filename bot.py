@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+import asyncio
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 
@@ -374,12 +375,12 @@ async def check_emails():
                     max_results=20,
                     mark_read=True,
                 )
+
                 #save the watermark
-                old_uid = user.get('last_uid', 0) or 0
-                if new_last_uid > old_uid:
+                if new_last_uid > (user.get('last_uid') or 0):
                     await update_last_uid(user['discord_id'], new_last_uid)
                     log.info(
-                        f"Watermark: {old_uid} > {new_last_uid}"
+                        f"Watermark: {user.get('last_uid')} > {new_last_uid}",
                         f"for user {user['discord_id']}"
                     )
 
@@ -393,6 +394,7 @@ async def check_emails():
 
                 for em in emails:
                     category_str=format_category(em.get("labels", []))
+
                     time_str=format_email_time(em.get("date", ""))
                     gmail_url=build_gmail_url(em["id"])
 
@@ -413,8 +415,8 @@ async def check_emails():
                     )
                     await channel.send(embed=embed)
                     await log_notification(
-                        user['discord_id'], em['from'], em['subject']
-                    )
+                        user['discord_id'], em['from'], em['subject'])
+                    await asyncio.sleep(0.5)
             except Exception as e:
                 log.error(f"Error for user {user['discord_id']}: {e}")
     except Exception as e:
