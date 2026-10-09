@@ -53,12 +53,14 @@ def clean_app_password(raw: str) -> str:
 
 def format_email_time(date_str: str) -> str:
     """Convert email date header into gmail-style short time"""
+    if not date_str:
+        return "Unknown"
     try:
         dt = parsedate_to_datetime(date_str)
         now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
-        delta_days = (now - dt).days
+        delta_days = (now.date() - dt.date()).days
 
-        if dt.date() == now.date():
+        if delta_days == 0:
             return dt.strftime("%I:%M %p").lstrip("0")
         elif delta_days < 7:
             return dt.strftime("%a %I:%M %p").lstrip("0")
