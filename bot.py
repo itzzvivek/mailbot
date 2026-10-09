@@ -375,11 +375,20 @@ async def check_emails():
                     mark_read=True,
                 )
                 #save the watermark
-                if new_last_uid > user.get('last_uid', 0):
+                old_uid = user.get('last_uid', 0) or 0
+                if new_last_uid > old_uid:
                     await update_last_uid(user['discord_id'], new_last_uid)
+                    log.info(
+                        f"Watermark: {old_uid} > {new_last_uid}"
+                        f"for user {user['discord_id']}"
+                    )
+
+                if not emails:
+                    continue
 
                 channel = bot.get_channel(user['channel_id'])
                 if not channel:
+                    log.info(f"channel: {user['channel_id']} not found")
                     continue
 
                 for em in emails:
