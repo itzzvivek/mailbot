@@ -263,8 +263,9 @@ async def get_last_uid(discord_id: int) -> int:
 async def update_last_uid(discord_id: int, uid: int) -> None:
     """store the highest UID seen so far"""
     async with pool.acquire() as conn:
-        await conn.execute("""
+        result= await conn.execute("""
             UPDATE users
             SET last_uid = $1, updated_at = CURRENT_TIMESTAMP
             WHERE discord_id = $2"""
         , uid, discord_id)
+        print(f"update_last_uid({discord_id}) -> {uid} | result = {result}")
