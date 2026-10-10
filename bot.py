@@ -4,6 +4,10 @@ import logging
 import asyncio
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+from zoneinfo import ZoneInfo
+from gmail_reader import fetch_new_emails
+
+
 
 import discord
 from discord import app_commands
@@ -15,8 +19,8 @@ from database import (
     set_channel, add_filter, remove_filter, pause_user, resume_user,
     delete_user, log_notification, get_user_stats, update_last_uid
 )
-from gmail_reader import fetch_new_emails
 
+DEFAULT_TZ = "Asia/kolkata"
 load_dotenv()
 
 logging.basicConfig(
@@ -51,21 +55,30 @@ def clean_app_password(raw: str) -> str:
     """Strip spaces — Google shows them as 'abcd efgh ijkl mnop'"""
     return re.sub(r"\s+", "", raw)
 
-def format_email_time(date_str: str) -> str:
+def format_email_time(date_str: str, user_tz: str = DEFAULT_TZ) -> str:
     """Convert email date header into gmail-style short time"""
     if not date_str:
         return "Unknown"
+
     try:
         dt = parsedate_to_datetime(date_str)
-        now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
-        delta_days = (now.date() - dt.date()).days
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+        try:
+            tz = ZoneInfo(user_tz)
+        except Exception:
+            tz = ZoneInfo(DEFAULT_TZ)
+
+        dt_local = dt.astimezone(tz)
+        now_local = datetime.now(tz)
+        delta_days = (now_local.date() - dt_local.date()).days
 
         if delta_days == 0:
-            return dt.strftime("%I:%M %p").lstrip("0")
+            return dt_local.strftime("%I:%M %p").lstrip("0")
         elif delta_days < 7:
-            return dt.strftime("%a %I:%M %p").lstrip("0")
+            return dt_local.strftime("%a %I:%M %p").lstrip("0")
         else:
-            return dt.strftime("%b %d")
+            return dt_local.strftime("%b %d")
     except Exception:
         return date_str or "Unknown"
 
@@ -110,7 +123,7 @@ async def connect(interaction: discord.Interaction):
     )
     embed.add_field(
         name="3️⃣ Save It Here",
-        value="Use `/setpassword <your-email> <app-password>`",
+        value="Use `/setup-cred <your-email> <app-password> <timezone>`",
         inline=False,
     )
     embed.add_field(
@@ -123,15 +136,29 @@ async def connect(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="setpassword", description="Save your Gmail + App Password")
+@bot.tree.command(name="setup-cred", description="Save your Gmail + App Password + timezone")
 @app_commands.describe(
     email="Your Gmail address (e.g., you@gmail.com)",
     app_password="Your 16-character App Password",
+    timezone="Your timezone - so email times match your Gmail"
 )
+@app_commands.choices(timezone=[
+    app_commands.Choice(name="IST — India (UTC+5:30)", value="Asia/Kolkata"),
+    app_commands.Choice(name="GST — Dubai (UTC+4)", value="Asia/Dubai"),
+    app_commands.Choice(name="GMT — London (UTC+0)", value="Europe/London"),
+    app_commands.Choice(name="CET — Berlin/Paris (UTC+1)", value="Europe/Berlin"),
+    app_commands.Choice(name="EST — New York (UTC-5)", value="America/New_York"),
+    app_commands.Choice(name="CST — Chicago (UTC-6)", value="America/Chicago"),
+    app_commands.Choice(name="MST — Denver (UTC-7)", value="America/Denver"),
+    app_commands.Choice(name="PST — Los Angeles (UTC-8)", value="America/Los_Angeles"),
+    app_commands.Choice(name="SGT — Singapore (UTC+8)", value="Asia/Singapore"),
+    app_commands.Choice(name="JST — Tokyo (UTC+9)", value="Asia/Tokyo"),
+    app_commands.Choice(name="AEST — Sydney (UTC+10)", value="Australia/Sydney"),
+    app_commands.Choice(name="UTC", value="UTC"),
+])
 async def setpassword(
-    interaction: discord.Interaction, email: str, app_password: str
+    interaction: discord.Interaction, email: str, app_password: str, timezone: app_commands.Choice[str] = None
 ):
-    # Basic validation
     if "@" not in email:
         await interaction.response.send_message(
             "That doesn't look like a valid email address.", ephemeral=True
@@ -147,10 +174,13 @@ async def setpassword(
         )
         return
 
+    tz = timezone.value if timezone else "Asia/Kolkata"
+
     # Save to DB
-    await save_credentials(interaction.user.id, email, cleaned)
+    await save_credentials(interaction.user.id, email, cleaned, tz)
     await interaction.response.send_message(
         f"Gmail connected: `{email}`\n"
+        f"Timezone: **{tz}**\n"
         f"Next: run `/setchannel` in the channel you want notifications in.",
         ephemeral=True,
     )
@@ -281,6 +311,12 @@ async def mystatus(interaction: discord.Interaction):
         value=str(stats.get('notification_count', 0)),
         inline=True,
     )
+
+    embed.add_field(
+        name="Timezone",
+        value=user.get('timezone', DEFAULT_TZ),
+        inline=True,
+    )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -397,7 +433,7 @@ async def check_emails():
                 for em in emails:
                     category_str=format_category(em.get("labels", []))
 
-                    time_str=format_email_time(em.get("date", ""))
+                    time_str=format_email_time(em.get("date", ""), user.get("timezone") or DEFAULT_TZ,)
                     gmail_url=build_gmail_url(em["id"])
 
 
