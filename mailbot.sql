@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     filters TEXT[] DEFAULT '{}',
     is_active BOOLEAN DEFAULT TRUE,
     last_uid BIGINT DEFAULT 0,
+    timezone TEXT DEFAULT 'Asia/Kolkata',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

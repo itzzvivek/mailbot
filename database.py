@@ -60,21 +60,21 @@ async def close_db():
 
 # ─── User Operations ───
 
-async def save_credentials(discord_id: int, gmail_address: str, app_password: str) -> dict:
+async def save_credentials(discord_id: int, gmail_address: str, app_password: str, timezone: str = "Asia/kolkata",) -> dict:
     """Create or update user with Gmail Credentials"""
     encrypted_password = encrypt(app_password)
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
-            INSERT INTO users (discord_id, gmail_address, app_password)
-            VALUES ($1, $2, $3)
+            INSERT INTO users (discord_id, gmail_address, app_password, timezone)
+            VALUES ($1, $2, $3, $4)
             ON CONFLICT (discord_id)
             DO UPDATE SET
                 gmail_address = EXCLUDED.gmail_address,
                 app_password = EXCLUDED.app_password,
                 updated_at = CURRENT_TIMESTAMP
             RETURNING *
-        """, discord_id, gmail_address, encrypted_password)
+        """, discord_id, gmail_address, encrypted_password, timezone)
         return dict(row) if row else {}
 
 async def get_user(discord_id: int) -> Optional[dict]:
@@ -91,7 +91,7 @@ async def get_active_users() -> List[dict]:
     """Get all active users (for background email check)"""
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT discord_id, gmail_address, app_password, channel_id, filters, last_uid
+            SELECT discord_id, gmail_address, app_password, channel_id, filters, last_uid, timezone
             FROM users
             WHERE is_active = TRUE AND channel_id IS NOT NULL
         """)
