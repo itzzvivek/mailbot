@@ -394,7 +394,7 @@ async def help_command(interaction: discord.Interaction):
 
 
 # ─── Background Loop ───
-@tasks.loop(seconds=30)
+@tasks.loop(seconds=60)
 async def check_emails():
     try:
         users = await get_active_users()
@@ -416,9 +416,10 @@ async def check_emails():
 
                 #save the watermark
                 if new_last_uid > (user.get('last_uid') or 0):
+                    old_uid = user.get('last_uid') or 0
                     await update_last_uid(user['discord_id'], new_last_uid)
                     log.info(
-                        f"Watermark: {user.get('last_uid')} > {new_last_uid}",
+                        f"Watermark: {old_uid} → {new_last_uid} "
                         f"for user {user['discord_id']}"
                     )
 
