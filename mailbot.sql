@@ -23,8 +23,22 @@ CREATE TABLE IF NOT EXISTS notification_logs (
     FOREIGN KEY (discord_id) REFERENCES users(discord_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS user_channels (
+    id SERIAL PRIMARY KEY,
+    discord_id BIGINT NOT NULL,
+    guild_id BIGINT NOT NULL,
+    channel_id BIGINT NOT NULL,
+    filters TEXT[] DEFAULT '{}',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (discord_id, guild_id)
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id);
 CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active);
 CREATE INDEX IF NOT EXISTS idx_logs_discord_id ON notification_logs(discord_id);
 CREATE INDEX IF NOT EXISTS idx_logs_sent_at ON notification_logs(sent_at);
+CREATE INDEX IF NOT EXISTS idx_user_channels_discord ON user_channels(discord_id);
+CREATE INDEX IF NOT EXISTS idx_user_channel_active ON user_channels(is_active);
