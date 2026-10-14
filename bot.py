@@ -17,7 +17,8 @@ from dotenv import load_dotenv
 from database import (
     init_db, close_db, get_user, get_active_users, save_credentials,
     set_channel, add_filter, remove_filter, pause_user, resume_user,
-    delete_user, log_notification, get_user_stats, update_last_uid
+    delete_user, log_notification, get_user_stats, update_last_uid, get_channel_for_guild,
+    get_all_active_subscriptions
 )
 
 DEFAULT_TZ = "Asia/kolkata"
@@ -98,11 +99,22 @@ async def connect(interaction: discord.Interaction):
     user = await get_user(interaction.user.id)
 
     if user:
-        await interaction.response.send_message(
-            "You're already connected.\n"
-            "Use `/setchannel` to pick a channel, or `/reconnect` to change Gmail.",
-            ephemeral=True,
+        guild_channel = await get_channel_for_guild(
+            interaction.user.id, interaction.guild.id
         )
+        if guild_channel:
+            await interaction.response.send_message(
+                "You're connected in this server.\n"
+                "Use `/setchannel` to change the channel, or `/notify` to adjust filters.",
+                ephemeral=True,
+            )
+        else:
+            await interaction.response.send_message(
+                "Your Gmail is connceted.\n"
+                "But this server doesn't have a notification channels yet.\n"
+                "Run `/setchannel` here to pick one.",
+                ephemeral=True,
+            )
         return
 
     embed = discord.Embed(
@@ -200,6 +212,11 @@ async def setpassword(
 
 @bot.tree.command(name="setchannel", description="Set notification channel")
 async def setchannel(interaction: discord.Interaction):
+    if not interaction.guild_id:
+        await interaction.response.send_message(
+            "This command only works in a server.", ephemeral=True
+        )
+        return
     user = await get_user(interaction.user.id)
     if not user:
         await interaction.response.send_message(
@@ -207,15 +224,15 @@ async def setchannel(interaction: discord.Interaction):
         )
         return
 
-    success = await set_channel(interaction.user.id, interaction.channel_id)
-    if success:
-        await interaction.response.send_message(
-            f"Notifications will go to {interaction.channel.mention}",
+    await set_channel(
+        interaction.user.id,
+        interaction.guild_id,
+        interaction.channel_id,
+    )
+
+    await interaction.response.send_message(
+            f"Notifications will go to {interaction.channel.mention} in this server",
             ephemeral=True,
-        )
-    else:
-        await interaction.response.send_message(
-            "Something went wrong. Try again.", ephemeral=True
         )
 
 
@@ -230,24 +247,17 @@ async def setchannel(interaction: discord.Interaction):
     app_commands.Choice(name="All", value="all"),
 ])
 async def notify(interaction: discord.Interaction, category: app_commands.Choice[str]):
-    user = await get_user(interaction.user.id)
-    if not user:
+    if not interaction.guild_id:
         await interaction.response.send_message(
-            "Connect your Gmail first with `/connect`", ephemeral=True
+            "This command only works in a server.", ephemeral=True
         )
         return
 
-    filters = await add_filter(interaction.user.id, category.value)
-
-    if category.value == "all":
-        note = "You'll receive notifications for **all** emails. (Previous filters cleared.)"
-    elif "all" in filters:
-        note = "You'll receive notifications for **all** emails."
-    else:
-        note = f"Added **{category.name}** to your notifications."
+    filters = await add_filter(interaction.user.id, interaction.guild_id, category.value)
 
     await interaction.response.send_message(
-        f"{note}\nActive filters: `{', '.join(filters) if filters else 'None'}`",
+        f"Added **{category.name}** fort this server.\n"
+        f"Active filters: `{', '.join(filters) if filters else 'None'}`",
         ephemeral=True,
     )
 
@@ -397,67 +407,85 @@ async def help_command(interaction: discord.Interaction):
 @tasks.loop(seconds=60)
 async def check_emails():
     try:
-        users = await get_active_users()
-        log.info(f"Found {len(users)} active users....")
+        subs = await get_all_active_subscriptions()
+        log.info(f"Checking {len(subs)} active subscriptions...")
 
-        for user in users:
-            if not user['channel_id']:
-                continue
+        # Group subscriptions by user so we fetch Gmail only once per user
+        by_user = {}
+        for s in subs:
+            by_user.setdefault(s['discord_id'], []).append(s)
+
+        for discord_id, user_subs in by_user.items():
+            first = user_subs[0]
+            user_tz = first.get('timezone') or DEFAULT_TZ
 
             try:
                 emails, new_last_uid = await fetch_new_emails(
-                    gmail_address=user['gmail_address'],
-                    app_password=user['app_password'],
-                    filters=list(user['filters']) if user['filters'] else [],
-                    last_uid=user.get('last_uid', 0),
+                    gmail_address=first['gmail_address'],
+                    app_password=first['app_password'],
+                    filters=list(first['filters']) if first['filters'] else [],
+                    last_uid=first.get('last_uid', 0) or 0,
                     max_results=20,
                     mark_read=True,
                 )
 
-                #save the watermark
-                if new_last_uid > (user.get('last_uid') or 0):
-                    old_uid = user.get('last_uid') or 0
-                    await update_last_uid(user['discord_id'], new_last_uid)
+                # ─── Save watermark BEFORE sending to Discord ───
+                old_uid = first.get('last_uid') or 0
+                if new_last_uid > old_uid:
+                    await update_last_uid(discord_id, new_last_uid)
                     log.info(
                         f"Watermark: {old_uid} → {new_last_uid} "
-                        f"for user {user['discord_id']}"
+                        f"for user {discord_id}"
                     )
 
                 if not emails:
                     continue
 
-                channel = bot.get_channel(user['channel_id'])
-                if not channel:
-                    log.info(f"channel: {user['channel_id']} not found")
-                    continue
-
+                # ─── Log each email once (not per subscription) ───
                 for em in emails:
-                    category_str=format_category(em.get("labels", []))
+                    await log_notification(discord_id, em['from'], em['subject'])
 
-                    time_str=format_email_time(em.get("date", ""), user.get("timezone") or DEFAULT_TZ,)
-                    gmail_url=build_gmail_url(em["id"])
+                # ─── Fan out to every subscribed channel ───
+                for sub in user_subs:
+                    channel = bot.get_channel(sub['channel_id'])
+                    if not channel:
+                        log.warning(f"Channel {sub['channel_id']} not found")
+                        continue
 
+                    for em in emails:
+                        category_str = format_category(em.get("labels", []))
+                        time_str = format_email_time(
+                            em.get("date", ""),
+                            user_tz,
+                        )
+                        gmail_url = build_gmail_url(em["id"])
 
-                    embed = discord.Embed(
-                        title=em['subject'][:256] or "(no subject)",
-                        description=em['preview'][:300] or "(no preview)",
-                        color=discord.Color.blurple(),
-                        url=gmail_url,
-                    )
-                    embed.set_author(name=em['from'])
-                    embed.add_field(name="Category", value=category_str, inline=True)
-                    embed.add_field(name="Time", value=time_str, inline=True)
-                    embed.add_field(
-                        name="Open",
-                        value=f"[Open in Gmail]({gmail_url})",
-                        inline=True,
-                    )
-                    await channel.send(embed=embed)
-                    await log_notification(
-                        user['discord_id'], em['from'], em['subject'])
-                    await asyncio.sleep(0.5)
+                        embed = discord.Embed(
+                            title=em['subject'][:256] or "(no subject)",
+                            description=em['preview'][:300] or "(no preview)",
+                            color=discord.Color.blurple(),
+                            url=gmail_url,
+                        )
+                        embed.set_author(name=em['from'])
+                        embed.add_field(name="Category", value=category_str, inline=True)
+                        embed.add_field(name="Time", value=time_str, inline=True)
+                        embed.add_field(
+                            name="🔗 Open",
+                            value=f"[Open in Gmail]({gmail_url})",
+                            inline=True,
+                        )
+
+                        try:
+                            await channel.send(embed=embed)
+                        except discord.Forbidden:
+                            log.warning(f"No permission to send in {sub['channel_id']}")
+                        except discord.HTTPException as e:
+                            log.error(f"Discord send failed: {e}")
+                        await asyncio.sleep(0.5)
+
             except Exception as e:
-                log.error(f"Error for user {user['discord_id']}: {e}")
+                log.error(f"Error for user {discord_id}: {e}")
+
     except Exception as e:
         log.error(f"Major error in check_emails loop: {e}")
 
