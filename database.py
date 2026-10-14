@@ -106,55 +106,57 @@ async def get_active_users() -> List[dict]:
         return users
 
 
-async def set_channel(discord_id: int, channel_id: int) -> bool:
+async def set_channel(discord_id: int, guild_id: int, channel_id: int) -> bool:
     """Set notification channel for user"""
     async with pool.acquire() as conn:
-        result = await conn.execute("""
-            UPDATE users
-            SET channel_id = $1, updated_at = CURRENT_TIMESTAMP
-            WHERE discord_id = $2
-        """, channel_id, discord_id)
-        return result == "UPDATE 1"
+        await conn.execute("""
+            INSERT INTO user_channels (discord_id, guild_id, channel_id)
+            VALUE ($1, $2, $3)
+            ON CONFLICT (discord_id, guild_id)
+            DO UPDATE SET
+                channel_id = EXCLUDED.channel_id,
+                updated_id= CURRENT_TIMESTAMP
+        """, discord_id, guild_id, channel_id)
+        return True
 
 
-async def add_filter(discord_id: int, filter_name: str) -> List[str]:
+async def add_filter(discord_id: int, guild_id: int, filter_name: str) -> List[str]:
     async with pool.acquire() as conn:
         # Case 1: User selected 'all' → wipe all filters, set only 'all'
         if filter_name == "all":
             row = await conn.fetchrow("""
-                UPDATE users
+                UPDATE user_channels
                 SET filters = ARRAY['all'],
                     updated_at = CURRENT_TIMESTAMP
-                WHERE discord_id = $1
+                WHERE discord_id = $1 AND guild_id = $2
                 RETURNING filters
-            """, discord_id)
+            """, discord_id, guild_id)
             return list(row['filters']) if row else []
 
         # Case 2: User selected a specific category
         # First, remove 'all' if present
         await conn.execute("""
-            UPDATE users
+            UPDATE user_channels
             SET filters = array_remove(filters, 'all'),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE discord_id = $1 AND 'all' = ANY(filters)
-        """, discord_id)
+            WHERE discord_id = $1 AND guild_id = $2 AND 'all' = ANY(filters)
+        """, discord_id, guild_id)
 
         # Then add the category (if not already present)
         row = await conn.fetchrow("""
-            UPDATE users
+            UPDATE user_channels
             SET filters = array_append(filters, $1),
                 updated_at = CURRENT_TIMESTAMP
-            WHERE discord_id = $2
+            WHERE discord_id = $2 AND guild_id = $3
               AND NOT ($1 = ANY(filters))
             RETURNING filters
-        """, filter_name, discord_id)
+        """, filter_name, discord_id, guild_id)
 
         # If the row wasn't updated (filter already existed), just fetch current
         if not row:
             row = await conn.fetchrow(
-                "SELECT filters FROM users WHERE discord_id = $1",
-                discord_id
-            )
+                """SELECT filters FROM user_channels 
+                WHERE discord_id = $1 AND guild_id = $2
+                """, discord_id, guild_id)
 
         return list(row['filters']) if row else []
 
@@ -269,3 +271,44 @@ async def update_last_uid(discord_id: int, uid: int) -> None:
             WHERE discord_id = $2"""
         , uid, discord_id)
         print(f"update_last_uid({discord_id}) -> {uid} | result = {result}")
+
+async def get_user_channels(discord_id: int) -> list:
+    """Get all channels subscription for a user"""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT guild_id, channel_id, filters, is_active
+            FROM user_channels
+            WHERE discord_id = $1
+        """, discord_id)
+        return [dict(r) for r in rows]
+
+async def get_channel_for_guild(discord_id: int,  guild_id: int):
+    """Get the channel config for this user in this guild"""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT channel_id, filters, is_active
+            FROM user_channels
+            WHERE discord_id = $1 AND guild_id = $2
+        """, discord_id, guild_id)
+        return dict(row) if row else None
+
+async def get_all_active_subscriptions() -> list:
+    """Get all user, guild, channel combos for the background loop"""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT uc.discord_id, uc.guild_id, uc.channel_id, uc.filters,
+                    u.gmail_address, u.app_password, u.last_uid, u.timezone
+            FROM user_channels uc
+            JOIN users u ON u.discord_id = uc.discord_id
+            WHERE uc.is_active = TRUE
+                AND u.is_active = TRUE
+        """)
+        subs = []
+        for row in rows:
+            s = dict(row)
+            try:
+                s['app_password'] = decrypt(s['app_password'])
+                subs.append(s)
+            except ValueError as e:
+                print(f"Skipping {s['discord_id']}: {e}")
+        return subs
