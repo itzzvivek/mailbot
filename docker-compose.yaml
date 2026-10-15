@@ -24,7 +24,7 @@ services:
       - mailbot-network
 
   bot:
-    build: .
+    image: ghrc.io/itzzvivek/mailbot:latest
     container_name: mailbot-bot
     restart: unless-stopped
     environment:

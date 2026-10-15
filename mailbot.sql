@@ -4,14 +4,15 @@ CREATE TABLE IF NOT EXISTS users (
     discord_id BIGINT UNIQUE NOT NULL,
     gmail_address TEXT NOT NULL,
     app_password TEXT NOT NULL,
-    channel_id BIGINT,
-    filters TEXT[] DEFAULT '{}',
+    timezone TEXT DEFAULT 'Asia/Kolkata',
     is_active BOOLEAN DEFAULT TRUE,
     last_uid BIGINT DEFAULT 0,
-    timezone TEXT DEFAULT 'Asia/Kolkata',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id);
+CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active);
 
 -- Notification logs
 CREATE TABLE IF NOT EXISTS notification_logs (
@@ -23,6 +24,10 @@ CREATE TABLE IF NOT EXISTS notification_logs (
     FOREIGN KEY (discord_id) REFERENCES users(discord_id) ON DELETE CASCADE
 );
 
+CREATE INDEX IF NOT EXISTS idx_logs_discord_id ON notification_logs(discord_id);
+CREATE INDEX IF NOT EXISTS idx_logs_sent_at ON notification_logs(sent_at);
+
+-- user_channels
 CREATE TABLE IF NOT EXISTS user_channels (
     id SERIAL PRIMARY KEY,
     discord_id BIGINT NOT NULL,
@@ -35,10 +40,6 @@ CREATE TABLE IF NOT EXISTS user_channels (
     UNIQUE (discord_id, guild_id)
 );
 
--- Indexes
-CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id);
-CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active);
-CREATE INDEX IF NOT EXISTS idx_logs_discord_id ON notification_logs(discord_id);
-CREATE INDEX IF NOT EXISTS idx_logs_sent_at ON notification_logs(sent_at);
 CREATE INDEX IF NOT EXISTS idx_user_channels_discord ON user_channels(discord_id);
+CREATE INDEX IF NOT EXISTS idx_user_channels_guild ON user_Channels(guild_id);
 CREATE INDEX IF NOT EXISTS idx_user_channel_active ON user_channels(is_active);
