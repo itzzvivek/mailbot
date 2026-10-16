@@ -13,7 +13,7 @@ jobs:
       packages: write
 
     steps:
-      - name: checkout code
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Log in Github Container Registry
@@ -33,11 +33,10 @@ jobs:
       - name: Deploy to Oracle VM
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secret.ORACLE_HOST }}
+          host: ${{ secrets.ORACLE_HOST }}
           username: ${{ secrets.ORACLE_USER }}
           key: ${{ secrets.ORACLE_SSH_KEY }}
           scripts: |
             cd ~/mailbot
-            echo "${{ secret.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull
             docker compose up -d
