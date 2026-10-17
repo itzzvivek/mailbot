@@ -470,7 +470,7 @@ async def check_emails():
                         embed.add_field(name="Category", value=category_str, inline=True)
                         embed.add_field(name="Time", value=time_str, inline=True)
                         embed.add_field(
-                            name="🔗 Open",
+                            name="Open",
                             value=f"[Open in Gmail]({gmail_url})",
                             inline=True,
                         )
