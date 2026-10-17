@@ -21,7 +21,7 @@ from database import (
     get_all_active_subscriptions
 )
 
-DEFAULT_TZ = "Asia/kolkata"
+DEFAULT_TZ = "Asia/Kolkata"
 load_dotenv()
 
 logging.basicConfig(
@@ -273,6 +273,11 @@ async def notify(interaction: discord.Interaction, category: app_commands.Choice
     app_commands.Choice(name="All", value="all"),
 ])
 async def unnotify(interaction: discord.Interaction, category: app_commands.Choice[str]):
+    if not interaction.guild_id:
+        await interaction.response.send_message(
+            "This command only works in a server.", ephemeral=True
+        )
+
     user = await get_user(interaction.user.id)
     if not user:
         await interaction.response.send_message(
@@ -280,7 +285,7 @@ async def unnotify(interaction: discord.Interaction, category: app_commands.Choi
         )
         return
 
-    filters = await remove_filter(interaction.user.id, category.value)
+    filters = await remove_filter(interaction.user.id, interaction.guild_id, category.value)
     await interaction.response.send_message(
         f"Removed **{category.name}**\n"
         f"Active filters: `{', '.join(filters) if filters else 'None'}`",
@@ -299,16 +304,20 @@ async def mystatus(interaction: discord.Interaction):
 
     stats = await get_user_stats(interaction.user.id)
 
+    guild_channel =None
+    if interaction.guild_id:
+        guild_channel = interaction.guild.get_channel(interaction.user.id, interaction.guild_id)
+
     embed = discord.Embed(title="Your Setup", color=discord.Color.blue())
     embed.add_field(name="Gmail", value=user['gmail_address'], inline=True)
     embed.add_field(
         name="Channel",
-        value=f"<#{user['channel_id']}>" if user['channel_id'] else "Not set",
+        value=f"<#{guild_channel['channel_id']}>" if guild_channel and guild_channel['channel_id'] else "Not set",
         inline=True,
     )
     embed.add_field(
         name="Notifying",
-        value=", ".join(user['filters']) if user['filters'] else "None",
+        value=", ".join(guild_channel['filters']) if guild_channel and guild_channel['filters'] else "None",
         inline=False,
     )
     embed.add_field(
