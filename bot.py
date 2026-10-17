@@ -93,62 +93,7 @@ def format_category(labels: list) -> str:
 
 
 # ─── Commands ───
-
-@bot.tree.command(name="connect", description="Connect your Gmail account")
-async def connect(interaction: discord.Interaction):
-    user = await get_user(interaction.user.id)
-
-    if user:
-        guild_channel = await get_channel_for_guild(
-            interaction.user.id, interaction.guild.id
-        )
-        if guild_channel:
-            await interaction.response.send_message(
-                "You're connected in this server.\n"
-                "Use `/setchannel` to change the channel, or `/notify` to adjust filters.",
-                ephemeral=True,
-            )
-        else:
-            await interaction.response.send_message(
-                "Your Gmail is connceted.\n"
-                "But this server doesn't have a notification channels yet.\n"
-                "Run `/setchannel` here to pick one.",
-                ephemeral=True,
-            )
-        return
-
-    embed = discord.Embed(
-        title="Connect Your Gmail",
-        description="Follow these steps to connect your Gmail account.",
-        color=discord.Color.blue(),
-    )
-    embed.add_field(
-        name="1️⃣ Enable 2-Step Verification",
-        value="https://myaccount.google.com/security",
-        inline=False,
-    )
-    embed.add_field(
-        name="2️⃣ Generate an App Password",
-        value="https://myaccount.google.com/apppasswords\n"
-              "Name it anything (e.g., `Discord Mailbot`).",
-        inline=False,
-    )
-    embed.add_field(
-        name="3️⃣ Save It Here",
-        value="Use `/setup-cred <your-email> <app-password> <timezone>`",
-        inline=False,
-    )
-    embed.add_field(
-        name="Security",
-        value="Your password is stored **only on this bot's server** and is used "
-              "exclusively for reading your Gmail. You can revoke it anytime at "
-              "https://myaccount.google.com/apppasswords",
-        inline=False,
-    )
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
-@bot.tree.command(name="setup-cred", description="Save your Gmail + App Password + timezone")
+@bot.tree.command(name="connect", description="Save your Gmail + App Password + timezone")
 @app_commands.describe(
     email="Your Gmail address (e.g., you@gmail.com)",
     app_password="Your 16-character App Password",
@@ -171,6 +116,27 @@ async def connect(interaction: discord.Interaction):
 async def setpassword(
     interaction: discord.Interaction, email: str, app_password: str, timezone: app_commands.Choice[str] = None
 ):
+    user = await get_user(interaction.user.id)
+
+    if user:
+        guild_channel = await get_channel_for_guild(
+            interaction.user.id, interaction.guild.id
+        )
+        if guild_channel:
+            await interaction.response.send_message(
+                "You're connected in this server.\n"
+                "Use `/setchannel` to change the channel, or `/notify` to adjust filters.",
+                ephemeral=True,
+            )
+        else:
+            await interaction.response.send_message(
+                "Your Gmail is connceted.\n"
+                "But this server doesn't have a notification channels yet.\n"
+                "Run `/setchannel` here to pick one.",
+                ephemeral=True,
+            )
+        return
+
     if "@" not in email:
         await interaction.response.send_message(
             "That doesn't look like a valid email address.", ephemeral=True
@@ -208,7 +174,6 @@ async def setpassword(
         pass
 
     log.info(f"Credentials saved for user {interaction.user.id}")
-
 
 @bot.tree.command(name="setchannel", description="Set notification channel")
 async def setchannel(interaction: discord.Interaction):
@@ -384,14 +349,41 @@ async def disconnect_confirm(interaction: discord.Interaction):
 @bot.tree.command(name="help", description="Show all commands")
 async def help_command(interaction: discord.Interaction):
     embed = discord.Embed(
+        title="Connect Your Gmail",
+        description="Follow these steps to connect your Gmail account.",
+        color=discord.Color.blue(),
+    )
+    embed.add_field(
+        name="1️⃣ Enable 2-Step Verification",
+        value="https://myaccount.google.com/security",
+        inline=False,
+    )
+    embed.add_field(
+        name="2️⃣ Generate an App Password",
+        value="https://myaccount.google.com/apppasswords\n"
+              "Name it anything (e.g., `Discord Mailbot`).",
+        inline=False,
+    )
+    embed.add_field(
+        name="3️⃣ Save It Here",
+        value="Use `/connect<your-email> <app-password> <timezone>`",
+        inline=False,
+    )
+    embed.add_field(
+        name="Security",
+        value="Your password is stored **only on this bot's server** and is used "
+              "exclusively for reading your Gmail. You can revoke it anytime at "
+              "https://myaccount.google.com/apppasswords",
+        inline=False,
+    )
+    embed = discord.Embed(
         title="Available Commands",
         description="Everything you can do with this bot",
         color=discord.Color.green(),
     )
     embed.add_field(
         name="Setup",
-        value="`/connect` — Connect your Gmail\n"
-              "`/setpassword` — Save Gmail + App Password\n"
+        value="`/connect` — Save Gmail + App Password + timezone\n"
               "`/setchannel` — Set notification channel",
         inline=False,
     )
@@ -410,7 +402,6 @@ async def help_command(interaction: discord.Interaction):
         inline=False,
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
-
 
 # ─── Background Loop ───
 @tasks.loop(seconds=60)
