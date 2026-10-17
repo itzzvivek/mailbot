@@ -15,10 +15,10 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 from database import (
-    init_db, close_db, get_user, get_active_users, save_credentials,
+    init_db, close_db, get_user, save_credentials,
     set_channel, add_filter, remove_filter, pause_user, resume_user,
     delete_user, log_notification, get_user_stats, update_last_uid, get_channel_for_guild,
-    get_all_active_subscriptions
+    get_all_active_subscriptions,
 )
 
 DEFAULT_TZ = "Asia/Kolkata"
@@ -306,7 +306,7 @@ async def mystatus(interaction: discord.Interaction):
 
     guild_channel =None
     if interaction.guild_id:
-        guild_channel = interaction.guild.get_channel(interaction.user.id, interaction.guild_id)
+        guild_channel = await get_channel_for_guild(interaction.user.id, interaction.guild_id)
 
     embed = discord.Embed(title="Your Setup", color=discord.Color.blue())
     embed.add_field(name="Gmail", value=user['gmail_address'], inline=True)
