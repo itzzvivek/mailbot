@@ -4,6 +4,7 @@ import logging
 import asyncio
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+from pydoc import text
 from zoneinfo import ZoneInfo
 from gmail_reader import fetch_new_emails
 
@@ -86,10 +87,19 @@ def format_email_time(date_str: str, user_tz: str = DEFAULT_TZ) -> str:
 def build_gmail_url(message_id: str) -> str:
     return f"https://mail.google.com/mail/u/0/#inbox/{message_id}"
 
-def format_category(labels: list) -> str:
-    if not labels:
+def format_category(categories: list, important: bool = False) -> str:
+    parts = []
+
+    if important:
+        parts.append("Important")
+
+    for cat in categories[:2]:
+        if cat.lower() != "important":
+            parts.append(cat)
+
+    if not parts:
         return "Inbox"
-    return "🏷️ " + ", ".join(labels[:3])
+    return "🏷️ " + ", ".join(parts)
 
 
 # ─── Commands ───
@@ -346,61 +356,69 @@ async def disconnect_confirm(interaction: discord.Interaction):
     )
 
 
-@bot.tree.command(name="help", description="Show all commands")
+@bot.tree.command(name="help", description="Setup guide + all commands")
 async def help_command(interaction: discord.Interaction):
+    user = await get_user(interaction.user.id)
+    is_connected = user is not None
+
     embed = discord.Embed(
-        title="Connect Your Gmail",
-        description="Follow these steps to connect your Gmail account.",
-        color=discord.Color.blue(),
-    )
-    embed.add_field(
-        name="1️⃣ Enable 2-Step Verification",
-        value="https://myaccount.google.com/security",
-        inline=False,
-    )
-    embed.add_field(
-        name="2️⃣ Generate an App Password",
-        value="https://myaccount.google.com/apppasswords\n"
-              "Name it anything (e.g., `Discord Mailbot`).",
-        inline=False,
-    )
-    embed.add_field(
-        name="3️⃣ Save It Here",
-        value="Use `/connect<your-email> <app-password> <timezone>`",
-        inline=False,
-    )
-    embed.add_field(
-        name="Security",
-        value="Your password is stored **only on this bot's server** and is used "
-              "exclusively for reading your Gmail. You can revoke it anytime at "
-              "https://myaccount.google.com/apppasswords",
-        inline=False,
-    )
-    embed = discord.Embed(
-        title="Available Commands",
-        description="Everything you can do with this bot",
+        title="📖 Mailbot Help",
         color=discord.Color.green(),
     )
+
+    if is_connected:
+        embed.description = "You're connected. Here's everything you can do."
+    else:
+        embed.description = "Get Gmail notifications in Discord. Start with the setup steps below."
+
+    if not is_connected:
+        embed.add_field(
+            name="Setup (do this once)",
+            value=(
+                "**1.** Enable 2-Step Verification → https://myaccount.google.com/security\n"
+                "**2.** Generate an App Password → https://myaccount.google.com/apppasswords\n"
+                "**3.** Run `/connect <email> <app-password> <timezone>`\n"
+                "**4.** Run `/setchannel` in the channel where you want notifications"
+            ),
+            inline=False,
+        )
+    else:
+        embed.add_field(
+            name="This Server",
+            value=(
+                "`/setchannel` — Set notification channel here\n"
+                "`/notify` — Choose email categories\n"
+                "`/unnotify` — Remove a category"
+            ),
+            inline=False,
+        )
+
     embed.add_field(
-        name="Setup",
-        value="`/connect` — Save Gmail + App Password + timezone\n"
-              "`/setchannel` — Set notification channel",
+        name="Account",
+        value=(
+            "`/setup-cred` — Change Gmail or timezone\n"
+            "`/mystatus` — View your current setup \n"
+            "`/notify` — Choose which emails\n"
+            "`/unnotify` — Remove a notification type"
+        ),
         inline=False,
     )
-    embed.add_field(
-        name="Customize",
-        value="`/notify` — Choose which emails\n"
-              "`/unnotify` — Remove a notification type\n"
-              "`/mystatus` — Check your setup",
-        inline=False,
-    )
+
     embed.add_field(
         name="Control",
-        value="`/pause` — Stop notifications\n"
-              "`/resume` — Start notifications\n"
-              "`/disconnect` — Remove your data",
+        value=(
+            "`/pause` — Stop notifications\n"
+            "`/resume` — Start notifications\n"
+            "`/disconnect` — Delete your Gmail + data"
+        ),
         inline=False,
     )
+
+    embed.set_footer(
+        text="Your App Password is encrypted and used only to read Gmail. "
+             "Revoke anytime at myaccount.google.com/apppasswords"
+    )
+
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ─── Background Loop ───

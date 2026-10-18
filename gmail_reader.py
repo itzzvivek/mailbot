@@ -6,6 +6,9 @@ from email.header import decode_header
 from typing import Dict, List
 from datetime import datetime, timedelta
 
+from unicodedata import category
+
+
 # Header / body helpers
 def _decode_header_value(raw: str) -> str:
     """Decode RFC 2047 encoded header value."""
@@ -46,54 +49,41 @@ def _extract_preview(msg, max_length: int = 300) -> str:
 
 # Gmail label parsing
 
-def _extract_gmail_labels(msg_data) -> List[str]:
-    """
-    Parse X-GM-LABELS response from IMAP fetch.
-    Gmail returns labels like:
-        (\\Inbox \\Important "Category Primary" "Category Updates")
-    Returns readable labels like: ['Primary', 'Updates', 'Important']
-    """
-    labels = []
+def _extract_gmail_labels(msg_data) -> dict:
+    """Extract Gmail labels from email message."""
+    categories = []
+    is_important = False
+
     for part in msg_data:
         if not isinstance(part, tuple) or len(part) == 0:
             continue
         part_str = part[0].decode(errors="ignore") if isinstance(part[0], bytes) else str(part[0])
-
-        #FIXED: process parts that DO contain X-GM-LABELS
-        if "X-GM-LABELS" not in part_str:
+        if "X-GM-LABELS" in part_str:
             continue
 
-        # Extract quoted labels and bare flags
-        matches = re.findall(r'"([^"]+)"|(\\\w+)', part_str)
-        for quoted, flag in matches:
-            label = quoted or flag
-            if not label:
-                continue
+        quoted = re.findall(r'"([^"]*)"', part_str)
+        for label in quoted:
+            label = label.strip()
+            if label.lower().startswitch("category "):
+                label = label.split(" ", 1)[1]
+                if label:
+                    categories.append(label.capitalize())
 
-            clean = label.lstrip("\\").strip()
-
-            # Skip boring system flags
-            if clean.lower() in ("inbox", "unread", "seen", "sent", "draft", "starred"):
-                if clean.lower() == "starred":
-                    labels.append("Starred")
-                continue
-
-            # "Category Updates" → "Updates"
-            if clean.lower().startswith("category "):
-                clean = clean.split(" ", 1)[1]
-
-            labels.append(clean.capitalize())
-
+        if re.search(r"(?<!\w)\\Important\b", part_str):
+            is_important = True
         break
 
     # Deduplicate while preserving order
     seen = set()
-    unique = []
-    for l in labels:
-        if l not in seen:
-            seen.add(l)
-            unique.append(l)
-    return unique
+    unique_cats = []
+    for c in categories:
+        if c not in seen:
+            seen.add(c)
+            unique_cats.append(c)
+    return {
+        "categories": unique_cats,
+        "important": is_important,
+    }
 
 
 # Search criteria builder
