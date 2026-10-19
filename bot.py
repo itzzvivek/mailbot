@@ -6,9 +6,7 @@ from datetime import datetime
 from email.utils import parsedate_to_datetime
 from pydoc import text
 from zoneinfo import ZoneInfo
-from gmail_reader import fetch_new_emails
-
-
+from gmail_reader import fetch_new_emails, verify_gmail_credentials
 
 import discord
 from discord import app_commands
@@ -165,6 +163,14 @@ async def setpassword(
 
     tz = timezone.value if timezone else "Asia/Kolkata"
 
+    success, error = verify_gmail_credentials(email, cleaned)
+    if not success:
+        await interaction.response.send_message(
+            f"{error}",
+            ephemeral=True,
+        )
+        return
+
     # Save to DB
     await save_credentials(interaction.user.id, email, cleaned, tz)
     await interaction.response.send_message(
@@ -178,7 +184,7 @@ async def setpassword(
     try:
         await interaction.delete_original_response()
         await interaction.followup.send(
-            "For your security, the message with your password was deleted.",
+            f"For your {email} security, the message with your password was deleted.",
             ephemeral=True,
         )
     except Exception:
