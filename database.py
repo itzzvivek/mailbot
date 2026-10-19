@@ -30,17 +30,6 @@ async def init_db():
         schema_sql = SQL_FILE.read_text()
         await conn.execute(schema_sql)
 
-        # await conn.execute("""
-        #     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_uid BIGINT DEFAULT 0;
-        #     ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Asia/Kolkata';
-        # """)
-        #
-        # # Drop obsolete columns from users (if they exist)
-        # await conn.execute("""
-        #     ALTER TABLE users DROP COLUMN IF EXISTS channel_id;
-        #     ALTER TABLE users DROP COLUMN IF EXISTS filters;
-        # """)
-
     print("Database initialized")
 
 

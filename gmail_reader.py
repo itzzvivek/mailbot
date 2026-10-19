@@ -3,11 +3,32 @@ import email
 import re
 import asyncio
 from email.header import decode_header
-from typing import Dict, List
-from datetime import datetime, timedelta
+from typing import List
+from datetime import datetime
 
 from unicodedata import category
 
+#verify credentials
+def verify_gmail_credentials(email: str, app_password: str) -> tuple[bool, str]:
+    """
+    test if the email + app password combination is valid.
+    return (success, error_message).
+    """
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+        mail.login(email, app_password)
+        mail.logout()
+        return True, ""
+    except imaplib.IMAP4.error as e:
+        error_msg = str(e).lower()
+        if "invalid credentials" in error_msg or "authentication failed" in error_msg:
+            return False, "Invalid email or App Password. Please Check and try again"
+        elif "application-specific password required" in error_msg:
+            return False, "You must use an App Password, not your regular Gmail password."
+        else:
+            return False, f"Gmail login failed: {e}"
+    except Exception as e:
+        return False, f"Could not connect to Gmail: {e}"
 
 # Header / body helpers
 def _decode_header_value(raw: str) -> str:

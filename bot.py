@@ -93,9 +93,10 @@ def format_category(categories: list, important: bool = False) -> str:
     if important:
         parts.append("Important")
 
-    for cat in categories[:2]:
-        if cat.lower() != "important":
-            parts.append(cat)
+    if isinstance(categories, list):
+        for cat in categories[:2]:
+            if isinstance(cat, str) and cat.lower() != "important":
+                parts.append(cat)
 
     if not parts:
         return "Inbox"
@@ -471,7 +472,7 @@ async def check_emails():
                         continue
 
                     for em in emails:
-                        category_str = format_category(em.get("labels", []))
+                        category_str = format_category(em.get("categories") or [], em.get("important", False),)
                         time_str = format_email_time(
                             em.get("date", ""),
                             user_tz,
