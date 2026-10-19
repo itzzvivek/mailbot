@@ -36,7 +36,7 @@ jobs:
           host: ${{ secrets.ORACLE_HOST }}
           username: ${{ secrets.ORACLE_USER }}
           key: ${{ secrets.ORACLE_SSH_KEY }}
-          scripts: |
+          script: |
             cd ~/mailbot
             docker compose pull
             docker compose up -d
