@@ -4,20 +4,25 @@ import logging
 import asyncio
 from datetime import datetime
 from email.utils import parsedate_to_datetime
-from pydoc import text
 from zoneinfo import ZoneInfo
-from gmail_reader import fetch_new_emails, verify_gmail_credentials
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
+from gmail_reader import fetch_new_emails, verify_gmail_credentials
 from database import (
-    init_db, close_db, get_user, save_credentials,
-    set_channel, add_filter, remove_filter, pause_user, resume_user,
-    delete_user, log_notification, get_user_stats, update_last_uid, get_channel_for_guild,
-    get_all_active_subscriptions,
+    init_db, close_db,
+    get_user, add_gmail_account, get_gmail_accounts,
+    get_gmail_account_by_email, get_gmail_account_for_guild,
+    delete_gmail_account,
+    set_channel_for_account, get_channels_for_account,
+    get_channel_config,
+    add_filter_to_channel, remove_filter_from_channel,
+    get_all_active_subscriptions, update_last_uid_for_account,
+    pause_user, resume_user, delete_user,
+    log_notification, get_user_stats,
 )
 
 DEFAULT_TZ = "Asia/Kolkata"
@@ -52,14 +57,12 @@ async def on_disconnect():
 # ─── Helpers ───
 
 def clean_app_password(raw: str) -> str:
-    """Strip spaces — Google shows them as 'abcd efgh ijkl mnop'"""
     return re.sub(r"\s+", "", raw)
 
+
 def format_email_time(date_str: str, user_tz: str = DEFAULT_TZ) -> str:
-    """Convert email date header into gmail-style short time"""
     if not date_str:
         return "Unknown"
-
     try:
         dt = parsedate_to_datetime(date_str)
         if dt.tzinfo is None:
@@ -68,84 +71,63 @@ def format_email_time(date_str: str, user_tz: str = DEFAULT_TZ) -> str:
             tz = ZoneInfo(user_tz)
         except Exception:
             tz = ZoneInfo(DEFAULT_TZ)
-
         dt_local = dt.astimezone(tz)
         now_local = datetime.now(tz)
-        delta_days = (now_local.date() - dt_local.date()).days
-
-        if delta_days == 0:
+        delta = (now_local.date() - dt_local.date()).days
+        if delta == 0:
             return dt_local.strftime("%I:%M %p").lstrip("0")
-        elif delta_days < 7:
+        elif 0 < delta < 7:
             return dt_local.strftime("%a %I:%M %p").lstrip("0")
-        else:
-            return dt_local.strftime("%b %d")
+        return dt_local.strftime("%b %d")
     except Exception:
         return date_str or "Unknown"
+
 
 def build_gmail_url(message_id: str) -> str:
     return f"https://mail.google.com/mail/u/0/#inbox/{message_id}"
 
-def format_category(categories: list, important: bool = False) -> str:
-    parts = []
 
+def format_category(categories, important: bool = False) -> str:
+    parts = []
     if important:
         parts.append("Important")
-
     if isinstance(categories, list):
         for cat in categories[:2]:
             if isinstance(cat, str) and cat.lower() != "important":
                 parts.append(cat)
-
     if not parts:
         return "Inbox"
-    return "🏷️ " + ", ".join(parts)
+    return ", ".join(parts)
 
 
-# ─── Commands ───
-@bot.tree.command(name="connect", description="Save your Gmail + App Password + timezone")
+# ─── /connect (add a Gmail account) ───
+
+@bot.tree.command(name="connect", description="Add a Gmail account")
 @app_commands.describe(
-    email="Your Gmail address (e.g., you@gmail.com)",
+    email="Your Gmail address",
     app_password="Your 16-character App Password",
-    timezone="Your timezone - so email times match your Gmail"
+    timezone="Your timezone",
 )
 @app_commands.choices(timezone=[
-    app_commands.Choice(name="IST — India (UTC+5:30)", value="Asia/Kolkata"),
-    app_commands.Choice(name="GST — Dubai (UTC+4)", value="Asia/Dubai"),
-    app_commands.Choice(name="GMT — London (UTC+0)", value="Europe/London"),
-    app_commands.Choice(name="CET — Berlin/Paris (UTC+1)", value="Europe/Berlin"),
-    app_commands.Choice(name="EST — New York (UTC-5)", value="America/New_York"),
-    app_commands.Choice(name="CST — Chicago (UTC-6)", value="America/Chicago"),
-    app_commands.Choice(name="MST — Denver (UTC-7)", value="America/Denver"),
-    app_commands.Choice(name="PST — Los Angeles (UTC-8)", value="America/Los_Angeles"),
-    app_commands.Choice(name="SGT — Singapore (UTC+8)", value="Asia/Singapore"),
-    app_commands.Choice(name="JST — Tokyo (UTC+9)", value="Asia/Tokyo"),
-    app_commands.Choice(name="AEST — Sydney (UTC+10)", value="Australia/Sydney"),
+    app_commands.Choice(name="IST — India", value="Asia/Kolkata"),
+    app_commands.Choice(name="GST — Dubai", value="Asia/Dubai"),
+    app_commands.Choice(name="GMT — London", value="Europe/London"),
+    app_commands.Choice(name="CET — Berlin", value="Europe/Berlin"),
+    app_commands.Choice(name="EST — New York", value="America/New_York"),
+    app_commands.Choice(name="CST — Chicago", value="America/Chicago"),
+    app_commands.Choice(name="MST — Denver", value="America/Denver"),
+    app_commands.Choice(name="PST — Los Angeles", value="America/Los_Angeles"),
+    app_commands.Choice(name="SGT — Singapore", value="Asia/Singapore"),
+    app_commands.Choice(name="JST — Tokyo", value="Asia/Tokyo"),
+    app_commands.Choice(name="AEST — Sydney", value="Australia/Sydney"),
     app_commands.Choice(name="UTC", value="UTC"),
 ])
-async def setpassword(
-    interaction: discord.Interaction, email: str, app_password: str, timezone: app_commands.Choice[str] = None
+async def connect(
+    interaction: discord.Interaction,
+    email: str,
+    app_password: str,
+    timezone: app_commands.Choice[str] = None,
 ):
-    user = await get_user(interaction.user.id)
-
-    if user:
-        guild_channel = await get_channel_for_guild(
-            interaction.user.id, interaction.guild.id
-        )
-        if guild_channel:
-            await interaction.response.send_message(
-                "You're connected in this server.\n"
-                "Use `/setchannel` to change the channel, or `/notify` to adjust filters.",
-                ephemeral=True,
-            )
-        else:
-            await interaction.response.send_message(
-                "Your Gmail is connceted.\n"
-                "But this server doesn't have a notification channels yet.\n"
-                "Run `/setchannel` here to pick one.",
-                ephemeral=True,
-            )
-        return
-
     if "@" not in email:
         await interaction.response.send_message(
             "That doesn't look like a valid email address.", ephemeral=True
@@ -155,70 +137,113 @@ async def setpassword(
     cleaned = clean_app_password(app_password)
     if len(cleaned) != 16:
         await interaction.response.send_message(
-            f"App Password should be 16 characters (got {len(cleaned)}). "
-            "Remove spaces and try again.",
+            f"App Password should be 16 characters (got {len(cleaned)}).",
             ephemeral=True,
         )
         return
 
-    tz = timezone.value if timezone else "Asia/Kolkata"
+    await interaction.response.defer(ephemeral=True)
 
-    success, error = verify_gmail_credentials(email, cleaned)
-    if not success:
-        await interaction.response.send_message(
-            f"{error}",
+    # Verify credentials before saving
+    ok, err = verify_gmail_credentials(email, cleaned)
+    if not ok:
+        await interaction.followup.send(f"{err}", ephemeral=True)
+        return
+
+    # Check duplicate for this user
+    existing = await get_gmail_account_by_email(interaction.user.id, email)
+    if existing:
+        await interaction.followup.send(
+            f"⚠️ `{email}` is already connected to your account.\n"
+            f"Use `/setchannel {email}` to link it to this server, "
+            f"or `/disconnect-account {email}` to remove it.",
             ephemeral=True,
         )
         return
 
-    # Save to DB
-    await save_credentials(interaction.user.id, email, cleaned, tz)
-    await interaction.response.send_message(
-        f"Gmail connected: `{email}`\n"
+    tz = timezone.value if timezone else DEFAULT_TZ
+    account = await add_gmail_account(interaction.user.id, email, cleaned, tz)
+
+    await interaction.followup.send(
+        f"Gmail added: `{email}`\n"
         f"Timezone: **{tz}**\n"
-        f"Next: run `/setchannel` in the channel you want notifications in.",
+        f"Next: `/setchannel {email}` in the channel where you want notifications.",
         ephemeral=True,
     )
 
-    # Delete the DM message so the password isn't visible in history
+    # Delete original for password privacy
     try:
         await interaction.delete_original_response()
         await interaction.followup.send(
-            f"For your {email} security, the message with your password was deleted.",
+            f"Password message deleted for security.\n"
+            f"`{email}` connected (tz: **{tz}**)",
             ephemeral=True,
         )
     except Exception:
         pass
 
-    log.info(f"Credentials saved for user {interaction.user.id}")
 
-@bot.tree.command(name="setchannel", description="Set notification channel")
-async def setchannel(interaction: discord.Interaction):
+# ─── /setchannel ───
+
+@bot.tree.command(name="setchannel", description="Link a Gmail account to this channel")
+@app_commands.describe(email="(Optional) which Gmail — only needed if you have multiple")
+async def setchannel(interaction: discord.Interaction, email: str = None):
     if not interaction.guild_id:
         await interaction.response.send_message(
             "This command only works in a server.", ephemeral=True
         )
         return
-    user = await get_user(interaction.user.id)
-    if not user:
+
+    accounts = await get_gmail_accounts(interaction.user.id)
+
+    if not accounts:
         await interaction.response.send_message(
-            "Connect your Gmail first with `/connect`", ephemeral=True
+            "No Gmail account connected. Run `/connect` first.",
+            ephemeral=True,
         )
         return
 
-    await set_channel(
-        interaction.user.id,
-        interaction.guild_id,
-        interaction.channel_id,
+    # Determine which account to use
+    if email:
+        account = next(
+            (a for a in accounts if a['gmail_address'].lower() == email.lower()),
+            None,
+        )
+        if not account:
+            list_str = "\n".join(f"• `{a['gmail_address']}`" for a in accounts)
+            await interaction.response.send_message(
+                f"`{email}` isn't connected.\nYour accounts:\n{list_str}",
+                ephemeral=True,
+            )
+            return
+    elif len(accounts) == 1:
+        # Only one account — auto-pick
+        account = accounts[0]
+    else:
+        # Multiple accounts, no email provided
+        list_str = "\n".join(f"• `{a['gmail_address']}`" for a in accounts)
+        await interaction.response.send_message(
+            f"⚠️ You have multiple Gmail accounts. Specify which one:\n"
+            f"`/setchannel <email>`\n\n"
+            f"Your accounts:\n{list_str}",
+            ephemeral=True,
+        )
+        return
+
+    # Link it
+    await set_channel_for_account(
+        account['id'], interaction.guild_id, interaction.channel_id
     )
 
     await interaction.response.send_message(
-            f"Notifications will go to {interaction.channel.mention} in this server",
-            ephemeral=True,
-        )
+        f"`{account['gmail_address']}` will notify {interaction.channel.mention}.",
+        ephemeral=True,
+    )
 
 
-@bot.tree.command(name="notify", description="Choose which emails notify you")
+# ─── /notify ───
+
+@bot.tree.command(name="notify", description="Choose which emails notify this channel")
 @app_commands.choices(category=[
     app_commands.Choice(name="Primary", value="primary"),
     app_commands.Choice(name="Important", value="important"),
@@ -230,19 +255,38 @@ async def setchannel(interaction: discord.Interaction):
 ])
 async def notify(interaction: discord.Interaction, category: app_commands.Choice[str]):
     if not interaction.guild_id:
+        await interaction.response.send_message("Server only.", ephemeral=True)
+        return
+
+    account = await get_gmail_account_for_guild(
+        interaction.user.id, interaction.guild_id
+    )
+    if not account:
         await interaction.response.send_message(
-            "This command only works in a server.", ephemeral=True
+            "No Gmail linked to this server.\n"
+            "Run `/setchannel <email>` first.",
+            ephemeral=True,
         )
         return
 
-    filters = await add_filter(interaction.user.id, interaction.guild_id, category.value)
+    filters = await add_filter_to_channel(
+        account['id'], interaction.guild_id, category.value
+    )
+
+    if category.value == "all":
+        note = "You'll receive **all** emails. (Previous filters cleared.)"
+    elif "all" in filters:
+        note = "You'll receive **all** emails."
+    else:
+        note = f"Added **{category.name}** for this channel."
 
     await interaction.response.send_message(
-        f"Added **{category.name}** fort this server.\n"
-        f"Active filters: `{', '.join(filters) if filters else 'None'}`",
+        f"{note}\nActive filters: `{', '.join(filters) if filters else 'None'}`",
         ephemeral=True,
     )
 
+
+# ─── /unnotify ───
 
 @bot.tree.command(name="unnotify", description="Remove a notification type")
 @app_commands.choices(category=[
@@ -256,18 +300,22 @@ async def notify(interaction: discord.Interaction, category: app_commands.Choice
 ])
 async def unnotify(interaction: discord.Interaction, category: app_commands.Choice[str]):
     if not interaction.guild_id:
-        await interaction.response.send_message(
-            "This command only works in a server.", ephemeral=True
-        )
+        await interaction.response.send_message("Server only.", ephemeral=True)
+        return
 
-    user = await get_user(interaction.user.id)
-    if not user:
+    account = await get_gmail_account_for_guild(
+        interaction.user.id, interaction.guild_id
+    )
+    if not account:
         await interaction.response.send_message(
-            "Connect your Gmail first with `/connect`", ephemeral=True
+            "No Gmail linked to this server.", ephemeral=True
         )
         return
 
-    filters = await remove_filter(interaction.user.id, interaction.guild_id, category.value)
+    filters = await remove_filter_from_channel(
+        account['id'], interaction.guild_id, category.value
+    )
+
     await interaction.response.send_message(
         f"Removed **{category.name}**\n"
         f"Active filters: `{', '.join(filters) if filters else 'None'}`",
@@ -275,173 +323,177 @@ async def unnotify(interaction: discord.Interaction, category: app_commands.Choi
     )
 
 
-@bot.tree.command(name="mystatus", description="Check your current setup")
+# ─── /mystatus ───
+
+@bot.tree.command(name="mystatus", description="See all your Gmail accounts and channels")
 async def mystatus(interaction: discord.Interaction):
-    user = await get_user(interaction.user.id)
-    if not user:
+    accounts = await get_gmail_accounts(interaction.user.id)
+    if not accounts:
         await interaction.response.send_message(
-            "Not connected. Use `/connect` to get started.", ephemeral=True
+            "Not connected. Use `/connect` to add a Gmail account.",
+            ephemeral=True,
         )
         return
 
     stats = await get_user_stats(interaction.user.id)
 
-    guild_channel =None
-    if interaction.guild_id:
-        guild_channel = await get_channel_for_guild(interaction.user.id, interaction.guild_id)
+    embed = discord.Embed(
+        title="Your Setup",
+        description=f"You have **{len(accounts)}** Gmail account(s) connected.",
+        color=discord.Color.blue(),
+    )
 
-    embed = discord.Embed(title="Your Setup", color=discord.Color.blue())
-    embed.add_field(name="Gmail", value=user['gmail_address'], inline=True)
+    for acc in accounts:
+        channels = await get_channels_for_account(acc['id'])
+        lines = []
+        if channels:
+            for c in channels:
+                filters = ", ".join(c['filters']) if c['filters'] else "no filters"
+                lines.append(f"• <#{c['channel_id']}> — {filters}")
+        else:
+            lines.append("• No channels linked")
+        embed.add_field(
+            name=f"{acc['gmail_address']} (tz: {acc['timezone']})",
+            value="\n".join(lines),
+            inline=False,
+        )
+
     embed.add_field(
-        name="Channel",
-        value=f"<#{guild_channel['channel_id']}>" if guild_channel and guild_channel['channel_id'] else "Not set",
-        inline=True,
-    )
-    embed.add_field(
-        name="Notifying",
-        value=", ".join(guild_channel['filters']) if guild_channel and guild_channel['filters'] else "None",
-        inline=False,
-    )
-    embed.add_field(
-        name="Status",
-        value="Active" if user['is_active'] else "Paused",
-        inline=True,
-    )
-    embed.add_field(
-        name="Notifications",
+        name="Total notifications",
         value=str(stats.get('notification_count', 0)),
-        inline=True,
-    )
-
-    embed.add_field(
-        name="Timezone",
-        value=user.get('timezone', DEFAULT_TZ),
         inline=True,
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="pause", description="Stop notifications")
+# ─── /pause, /resume ───
+
+@bot.tree.command(name="pause", description="Pause ALL notifications")
 async def pause(interaction: discord.Interaction):
     if await pause_user(interaction.user.id):
         await interaction.response.send_message(
-            "Notifications paused. Use `/resume` when ready.", ephemeral=True
+            "All notifications paused.", ephemeral=True
         )
     else:
         await interaction.response.send_message(
-            "Not connected. Use `/connect` first.", ephemeral=True
+            "No account found. Use `/connect` first.", ephemeral=True
         )
 
 
-@bot.tree.command(name="resume", description="Start notifications again")
+@bot.tree.command(name="resume", description="Resume notifications")
 async def resume(interaction: discord.Interaction):
     if await resume_user(interaction.user.id):
-        await interaction.response.send_message(
-            "▶️ Notifications resumed!", ephemeral=True
-        )
+        await interaction.response.send_message("▶️ Notifications resumed!", ephemeral=True)
     else:
         await interaction.response.send_message(
-            "Not connected. Use `/connect` first.", ephemeral=True
+            "No account found. Use `/connect` first.", ephemeral=True
         )
 
 
-@bot.tree.command(name="disconnect", description="Remove your Gmail and data")
+# ─── /disconnect-account, /disconnect ───
+
+@bot.tree.command(name="disconnect-account", description="Remove one Gmail account")
+@app_commands.describe(email="Which Gmail account to remove")
+async def disconnect_account(interaction: discord.Interaction, email: str):
+    account = await get_gmail_account_by_email(interaction.user.id, email)
+    if not account:
+        await interaction.response.send_message(
+            f"`{email}` isn't connected to your account.", ephemeral=True
+        )
+        return
+
+    await delete_gmail_account(account['id'])
+    await interaction.response.send_message(
+        f"Removed `{email}` and all its channel links.", ephemeral=True
+    )
+
+
+@bot.tree.command(name="disconnect", description="Remove ALL Gmail accounts")
 async def disconnect(interaction: discord.Interaction):
     await interaction.response.send_message(
-        "⚠️ Are you sure? This deletes all your data.\n"
+        "This deletes **all** your Gmail accounts and channels.\n"
         "Type `/disconnect-confirm` to confirm.",
         ephemeral=True,
     )
 
 
-@bot.tree.command(name="disconnect-confirm", description="Confirm data deletion")
+@bot.tree.command(name="disconnect-confirm", description="Confirm full deletion")
 async def disconnect_confirm(interaction: discord.Interaction):
     await delete_user(interaction.user.id)
     await interaction.response.send_message(
-        "Your data has been deleted. Reconnect anytime with `/connect`.",
+        "All your data has been deleted. Reconnect anytime with `/connect`.",
         ephemeral=True,
     )
 
 
+# ─── /help ───
+
 @bot.tree.command(name="help", description="Setup guide + all commands")
 async def help_command(interaction: discord.Interaction):
-    user = await get_user(interaction.user.id)
-    is_connected = user is not None
+    accounts = await get_gmail_accounts(interaction.user.id)
+    has_accounts = len(accounts) > 0
 
     embed = discord.Embed(
-        title="📖 Mailbot Help",
+        title="Mailbot Help",
+        description=(
+            "Get Gmail notifications in Discord. "
+            "You can connect multiple Gmail accounts and route each to different servers."
+        ),
         color=discord.Color.green(),
     )
 
-    if is_connected:
-        embed.description = "You're connected. Here's everything you can do."
-    else:
-        embed.description = "Get Gmail notifications in Discord. Start with the setup steps below."
-
-    if not is_connected:
+    if not has_accounts:
         embed.add_field(
-            name="Setup (do this once)",
+            name="Setup",
             value=(
                 "**1.** Enable 2-Step Verification → https://myaccount.google.com/security\n"
                 "**2.** Generate an App Password → https://myaccount.google.com/apppasswords\n"
-                "**3.** Run `/connect <email> <app-password> <timezone>`\n"
-                "**4.** Run `/setchannel` in the channel where you want notifications"
-            ),
-            inline=False,
-        )
-    else:
-        embed.add_field(
-            name="This Server",
-            value=(
-                "`/setchannel` — Set notification channel here\n"
-                "`/notify` — Choose email categories\n"
-                "`/unnotify` — Remove a category"
+                "**3.** `/connect <email> <app-password> [timezone]`\n"
+                "**4.** `/setchannel <email>` in the channel where you want notifications"
             ),
             inline=False,
         )
 
     embed.add_field(
-        name="Account",
+        name="Accounts",
         value=(
-            "`/setup-cred` — Change Gmail or timezone\n"
-            "`/mystatus` — View your current setup \n"
-            "`/notify` — Choose which emails\n"
-            "`/unnotify` — Remove a notification type"
+            "`/connect` — Add a Gmail account\n"
+            "`/setchannel <email>` — Link an account to this server\n"
+            "`/disconnect-account <email>` — Remove one account\n"
+            "`/disconnect` — Remove all accounts"
         ),
         inline=False,
     )
-
+    embed.add_field(
+        name="Filters",
+        value="`/notify` — Add a category\n`/unnotify` — Remove a category",
+        inline=False,
+    )
     embed.add_field(
         name="Control",
-        value=(
-            "`/pause` — Stop notifications\n"
-            "`/resume` — Start notifications\n"
-            "`/disconnect` — Delete your Gmail + data"
-        ),
+        value="`/pause` · `/resume` · `/mystatus`",
         inline=False,
     )
-
     embed.set_footer(
-        text="Your App Password is encrypted and used only to read Gmail. "
-             "Revoke anytime at myaccount.google.com/apppasswords"
+        text="Passwords are encrypted. Revoke anytime at myaccount.google.com/apppasswords"
     )
-
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+
 # ─── Background Loop ───
+
 @tasks.loop(seconds=60)
 async def check_emails():
     try:
         subs = await get_all_active_subscriptions()
         log.info(f"Checking {len(subs)} active subscriptions...")
 
-        # Group subscriptions by user so we fetch Gmail only once per user
-        by_user = {}
+        by_account = {}
         for s in subs:
-            by_user.setdefault(s['discord_id'], []).append(s)
+            by_account.setdefault(s['gmail_account_id'], []).append(s)
 
-        for discord_id, user_subs in by_user.items():
-            first = user_subs[0]
+        for account_id, channel_subs in by_account.items():
+            first = channel_subs[0]
             user_tz = first.get('timezone') or DEFAULT_TZ
 
             try:
@@ -454,35 +506,31 @@ async def check_emails():
                     mark_read=True,
                 )
 
-                # ─── Save watermark BEFORE sending to Discord ───
                 old_uid = first.get('last_uid') or 0
                 if new_last_uid > old_uid:
-                    await update_last_uid(discord_id, new_last_uid)
-                    log.info(
-                        f"Watermark: {old_uid} → {new_last_uid} "
-                        f"for user {discord_id}"
-                    )
+                    await update_last_uid_for_account(account_id, new_last_uid)
+                    log.info(f"Watermark: {old_uid} → {new_last_uid} for account {account_id}")
 
                 if not emails:
                     continue
 
-                # ─── Log each email once (not per subscription) ───
                 for em in emails:
-                    await log_notification(discord_id, em['from'], em['subject'])
+                    await log_notification(
+                        first['discord_id'], account_id,
+                        em['from'], em['subject'],
+                    )
 
-                # ─── Fan out to every subscribed channel ───
-                for sub in user_subs:
+                for sub in channel_subs:
                     channel = bot.get_channel(sub['channel_id'])
                     if not channel:
                         log.warning(f"Channel {sub['channel_id']} not found")
                         continue
 
                     for em in emails:
-                        category_str = format_category(em.get("categories") or [], em.get("important", False),)
-                        time_str = format_email_time(
-                            em.get("date", ""),
-                            user_tz,
+                        category_str = format_category(
+                            em.get("categories") or [], em.get("important", False)
                         )
+                        time_str = format_email_time(em.get("date", ""), user_tz)
                         gmail_url = build_gmail_url(em["id"])
 
                         embed = discord.Embed(
@@ -492,27 +540,24 @@ async def check_emails():
                             url=gmail_url,
                         )
                         embed.set_author(name=em['from'])
-                        embed.add_field(name="Category", value=category_str, inline=True)
-                        embed.add_field(name="Time", value=time_str, inline=True)
-                        embed.add_field(
-                            name="Open",
-                            value=f"[Open in Gmail]({gmail_url})",
-                            inline=True,
-                        )
+                        embed.add_field(name="🏷️ Category", value=category_str, inline=True)
+                        embed.add_field(name="🕒 Time", value=time_str, inline=True)
+                        embed.add_field(name="🔗 Open", value=f"[Open in Gmail]({gmail_url})", inline=True)
 
                         try:
                             await channel.send(embed=embed)
                         except discord.Forbidden:
-                            log.warning(f"No permission to send in {sub['channel_id']}")
+                            log.warning(f"No permission in {sub['channel_id']}")
                         except discord.HTTPException as e:
                             log.error(f"Discord send failed: {e}")
                         await asyncio.sleep(0.5)
 
             except Exception as e:
-                log.error(f"Error for user {discord_id}: {e}")
+                log.error(f"Error for account {account_id}: {e}")
 
     except Exception as e:
         log.error(f"Major error in check_emails loop: {e}")
+
 
 # ─── Run ───
 
