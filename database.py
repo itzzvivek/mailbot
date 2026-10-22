@@ -14,6 +14,17 @@ if not DATABASE_URL:
 SQL_FILE = Path(__file__).parent / "mailbot.sql"
 pool: Optional[asyncpg.Pool] = None
 
+async def ensure_pool():
+    """Ensure a pool exists and is not closed."""
+    global pool
+    if pool is None or pool.is_closing():
+        print("Recreating database pool...")
+        pool = await asyncpg.create_pool(DATABASE_URL, min_size=10, command_timeout=60)
+        #Re-apply schema
+        async with pool.acquire() as conn:
+            await conn.execute(SQL_FILE.read_text())
+    return pool
+
 
 async def init_db():
     global pool
@@ -37,7 +48,7 @@ async def close_db():
 # ─── Users ───
 
 async def ensure_user(discord_id: int) -> None:
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         await conn.execute("""
             INSERT INTO users (discord_id) VALUES ($1)
             ON CONFLICT (discord_id) DO NOTHING
@@ -46,7 +57,7 @@ async def ensure_user(discord_id: int) -> None:
 
 async def get_user(discord_id: int) -> Optional[dict]:
     """User identity only (no Gmail fields)."""
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         row = await conn.fetchrow("""
             SELECT id, discord_id, is_active, created_at, updated_at
             FROM users WHERE discord_id = $1
@@ -66,7 +77,7 @@ async def add_gmail_account(
     encrypted = encrypt(app_password)
     await ensure_user(discord_id)
 
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         row = await conn.fetchrow("""
             INSERT INTO gmail_accounts
                 (discord_id, gmail_address, app_password, timezone)
@@ -83,7 +94,7 @@ async def add_gmail_account(
 
 async def get_gmail_accounts(discord_id: int) -> List[dict]:
     """All Gmail accounts for this user (no passwords)."""
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         rows = await conn.fetch("""
             SELECT id, gmail_address, timezone, last_uid, is_active
             FROM gmail_accounts
@@ -94,7 +105,7 @@ async def get_gmail_accounts(discord_id: int) -> List[dict]:
 
 
 async def get_gmail_account_by_email(discord_id: int, email: str) -> Optional[dict]:
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         row = await conn.fetchrow("""
             SELECT id, discord_id, gmail_address, timezone, last_uid, is_active
             FROM gmail_accounts
@@ -105,7 +116,7 @@ async def get_gmail_account_by_email(discord_id: int, email: str) -> Optional[di
 
 async def get_gmail_account_for_guild(discord_id: int, guild_id: int) -> Optional[dict]:
     """Which Gmail account is linked to this server?"""
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         row = await conn.fetchrow("""
             SELECT ga.id, ga.gmail_address, ga.timezone, ga.last_uid
             FROM gmail_accounts ga
@@ -116,7 +127,7 @@ async def get_gmail_account_for_guild(discord_id: int, guild_id: int) -> Optiona
 
 
 async def delete_gmail_account(account_id: int) -> bool:
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         result = await conn.execute(
             "DELETE FROM gmail_accounts WHERE id = $1", account_id
         )
@@ -129,7 +140,7 @@ async def set_channel_for_account(
     account_id: int, guild_id: int, channel_id: int
 ) -> bool:
     """Link an account to a server's channel."""
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         await conn.execute("""
             INSERT INTO user_channels (gmail_account_id, guild_id, channel_id)
             VALUES ($1, $2, $3)
@@ -142,7 +153,7 @@ async def set_channel_for_account(
 
 
 async def get_channels_for_account(account_id: int) -> List[dict]:
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         rows = await conn.fetch("""
             SELECT guild_id, channel_id, filters, is_active
             FROM user_channels
@@ -154,7 +165,7 @@ async def get_channels_for_account(account_id: int) -> List[dict]:
 async def add_filter_to_channel(
     account_id: int, guild_id: int, filter_name: str
 ) -> List[str]:
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         if filter_name == "all":
             row = await conn.fetchrow("""
                 UPDATE user_channels
@@ -191,7 +202,7 @@ async def add_filter_to_channel(
 async def remove_filter_from_channel(
     account_id: int, guild_id: int, filter_name: str
 ) -> List[str]:
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         row = await conn.fetchrow("""
             UPDATE user_channels
             SET filters = array_remove(filters, $1),
@@ -203,7 +214,7 @@ async def remove_filter_from_channel(
 
 
 async def get_channel_config(account_id: int, guild_id: int) -> Optional[dict]:
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         row = await conn.fetchrow("""
             SELECT channel_id, filters, is_active
             FROM user_channels
@@ -215,7 +226,7 @@ async def get_channel_config(account_id: int, guild_id: int) -> Optional[dict]:
 # ─── Background loop ───
 
 async def get_all_active_subscriptions() -> List[dict]:
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         rows = await conn.fetch("""
             SELECT
                 ga.id            AS gmail_account_id,
@@ -244,7 +255,7 @@ async def get_all_active_subscriptions() -> List[dict]:
 
 
 async def update_last_uid_for_account(account_id: int, uid: int) -> None:
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         await conn.execute("""
             UPDATE gmail_accounts
             SET last_uid = $1, updated_at = CURRENT_TIMESTAMP
@@ -255,7 +266,7 @@ async def update_last_uid_for_account(account_id: int, uid: int) -> None:
 # ─── Pause / Resume / Delete ───
 
 async def pause_user(discord_id: int) -> bool:
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         result = await conn.execute("""
             UPDATE users SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
             WHERE discord_id = $1
@@ -264,7 +275,7 @@ async def pause_user(discord_id: int) -> bool:
 
 
 async def resume_user(discord_id: int) -> bool:
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         result = await conn.execute("""
             UPDATE users SET is_active = TRUE, updated_at = CURRENT_TIMESTAMP
             WHERE discord_id = $1
@@ -274,7 +285,7 @@ async def resume_user(discord_id: int) -> bool:
 
 async def delete_user(discord_id: int) -> bool:
     """Cascade deletes gmail_accounts + user_channels + logs via FK."""
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         result = await conn.execute(
             "DELETE FROM users WHERE discord_id = $1", discord_id
         )
@@ -286,7 +297,7 @@ async def delete_user(discord_id: int) -> bool:
 async def log_notification(
     discord_id: int, account_id: int, sender: str, subject: str
 ) -> None:
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         await conn.execute("""
             INSERT INTO notification_logs
                 (discord_id, gmail_account_id, sender, subject)
@@ -295,7 +306,7 @@ async def log_notification(
 
 
 async def get_user_stats(discord_id: int) -> dict:
-    async with pool.acquire() as conn:
+    async with (await ensure_pool()).acquire() as conn:
         user = await conn.fetchrow(
             "SELECT is_active FROM users WHERE discord_id = $1", discord_id
         )
