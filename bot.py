@@ -574,7 +574,7 @@ async def health(request):
     quiet = time.monotonic() - last_event
     ok = bot.is_ready() and bot.is_close() and not math.isnan(bot.latency) and quiet < 600
     return web.Response(
-        {"ok": ok, "latency":bot.latency,"quiet": quiet},
+        {"ok": ok, "latency":bot.latency,"quiet": quiet, "user": str(bot.user) if bot.user else None},
         status=200 if ok else 503,
     )
 
@@ -585,11 +585,14 @@ async def start_health_server():
     await runner.setup()
     site = web.TCPSite(runner, host="0.0.0.0", port=80)
     await site.start()
+    log.info("Health server listening on http://0.0.0.0:8080/health")
 
 
 # ─── Run ───
 
-bot.loop.create_task(start_health_server())
+@bot.event
+async def setup_hook():
+    asyncio.create_task(start_health_server())
 
 if __name__ == "__main__":
     bot.run(os.getenv("DISCORD_BOT_TOKEN"))
