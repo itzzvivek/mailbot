@@ -5,30 +5,24 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="7306935c-8d90-456a-ba5b-5961ff49f511" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.dockerignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Dockerfile" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/bot.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/config.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/conftest.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/docker-compose.yml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/imap_listener.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/mailbot/central-bot/requirements.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/storage.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_bot.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_imap_listener.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_storage.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/bot.py" beforeDir="false" afterPath="$PROJECT_DIR$/bot.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/database.py" beforeDir="false" afterPath="$PROJECT_DIR$/database.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gmail_reader.py" beforeDir="false" afterPath="$PROJECT_DIR$/gmail_reader.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="29" />
+  </component>
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
       <list>
+        <option value="Dockerfile" />
+        <option value="Docker Compose" />
         <option value="Python Script" />
       </list>
     </option>
@@ -42,61 +36,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.000000004352422" />
-      <entry key="MS500" value="1.0440056036653036" />
-      <entry key="S2" value="2.133083641357439" />
-      <entry key="S5" value="4.21822579669595" />
-      <entry key="S10" value="7.650449327954844" />
-      <entry key="S30" value="19.968080843112595" />
-      <entry key="S60" value="35.47091532651169" />
-      <entry key="M2" value="56.76096042697344" />
-      <entry key="M5" value="85.48667506084146" />
-      <entry key="M10" value="111.06996439512031" />
-      <entry key="M15" value="131.95781825036323" />
-      <entry key="M30" value="173.74120729481518" />
-      <entry key="H1" value="210.46925901577129" />
-      <entry key="H2" value="235.32391798131624" />
-      <entry key="H4" value="249.84916053625258" />
-      <entry key="D1" value="263.18724249850635" />
-      <entry key="W1" value="265.59510412984906" />
+      <entry key="MS100" value="1.0" />
+      <entry key="MS500" value="1.0006080305969154" />
+      <entry key="S2" value="1.2334759118324063" />
+      <entry key="S5" value="2.544421836508479" />
+      <entry key="S10" value="4.928706431287079" />
+      <entry key="S30" value="12.803301885876667" />
+      <entry key="S60" value="24.501293280065507" />
+      <entry key="M2" value="47.977463453061915" />
+      <entry key="M5" value="93.18774663459858" />
+      <entry key="M10" value="123.48021731119624" />
+      <entry key="M15" value="136.88334635529745" />
+      <entry key="M30" value="159.87305174478374" />
+      <entry key="H1" value="213.35379656124945" />
+      <entry key="H2" value="348.9311506967494" />
+      <entry key="H4" value="618.7189953448208" />
+      <entry key="D1" value="2958.055668094617" />
+      <entry key="W1" value="7340.558007608193" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
-      <entry key="MS500" value="3.2609963460020652E-93" />
-      <entry key="S2" value="7.556793906643431E-24" />
-      <entry key="S5" value="5.640726350260658E-10" />
-      <entry key="S10" value="2.375021336801136E-5" />
-      <entry key="S30" value="0.028744571473816344" />
-      <entry key="S60" value="0.16954224097202522" />
-      <entry key="M2" value="0.4117550740088405" />
-      <entry key="M5" value="0.701222081940762" />
-      <entry key="M10" value="0.8373900417014544" />
-      <entry key="M15" value="0.888420411549833" />
-      <entry key="M30" value="0.942560561210701" />
-      <entry key="H1" value="0.9708555820567248" />
-      <entry key="H2" value="0.9853200404217526" />
-      <entry key="H4" value="0.9926328830044625" />
-      <entry key="D1" value="0.9987683610531398" />
-      <entry key="W1" value="0.9998239586346066" />
+      <entry key="MS500" value="3.947035402202014E-184" />
+      <entry key="S2" value="1.409508903786183E-46" />
+      <entry key="S5" value="4.575628805382817E-19" />
+      <entry key="S10" value="7.052375072930104E-10" />
+      <entry key="S30" value="0.0011863428244733385" />
+      <entry key="S60" value="0.0471959884307213" />
+      <entry key="M2" value="0.3046760961541241" />
+      <entry key="M5" value="0.9403054822834682" />
+      <entry key="M10" value="1.3714784896805072" />
+      <entry key="M15" value="1.571488205981914" />
+      <entry key="M30" value="2.2835803727271995" />
+      <entry key="H1" value="5.451732054696005" />
+      <entry key="H2" value="15.335269462437786" />
+      <entry key="H4" value="36.119274164020325" />
+      <entry key="D1" value="139.62983233583114" />
+      <entry key="W1" value="274.15946588451106" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="0.0015754728219065472" />
-      <entry key="MS500" value="0.30416420625765145" />
-      <entry key="S2" value="1.7220283545140085" />
-      <entry key="S5" value="3.915373865557852" />
-      <entry key="S10" value="7.402292663989807" />
-      <entry key="S30" value="19.819136688251625" />
-      <entry key="S60" value="35.499682929287474" />
-      <entry key="M2" value="57.06591113909693" />
-      <entry key="M5" value="86.12615194045141" />
-      <entry key="M10" value="111.87113596695002" />
-      <entry key="M15" value="132.82047352813717" />
-      <entry key="M30" value="174.66982920538845" />
-      <entry key="H1" value="211.43280009513927" />
-      <entry key="H2" value="236.30547891633108" />
-      <entry key="H4" value="250.83988595413712" />
-      <entry key="D1" value="264.18568883499614" />
-      <entry key="W1" value="266.59488198092083" />
+      <entry key="MS100" value="0.9075191553171609" />
+      <entry key="MS500" value="0.9809574907232906" />
+      <entry key="S2" value="1.186598932442349" />
+      <entry key="S5" value="2.478894577731702" />
+      <entry key="S10" value="4.844547709554275" />
+      <entry key="S30" value="12.681662169613823" />
+      <entry key="S60" value="24.431021400326383" />
+      <entry key="M2" value="48.17140542520886" />
+      <entry key="M5" value="94.04307186793146" />
+      <entry key="M10" value="124.79570699150209" />
+      <entry key="M15" value="138.41349183420914" />
+      <entry key="M30" value="162.13144010142963" />
+      <entry key="H1" value="218.78612174031642" />
+      <entry key="H2" value="364.248612632556" />
+      <entry key="H4" value="654.8219751787873" />
+      <entry key="D1" value="3097.6754338733135" />
+      <entry key="W1" value="7614.714426572992" />
     </decayedShown>
   </component>
   <component name="ProjectColorInfo">{
@@ -104,6 +98,9 @@
   &quot;fromUser&quot;: false
 }</component>
   <component name="ProjectId" id="3H92PaSMmaUEalofkmzbgcM0EnZ" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
@@ -119,94 +116,27 @@
     &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
     &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
     &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;bot-v2&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;bot-v3&quot;,
     &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
     &quot;last_opened_file_path&quot;: &quot;D:/dev/gmail-discord-bot/gmail-discord-bot&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.jshint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.jshint&quot;: &quot;&quot;,
     &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
     &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
     &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;
   }
 }</component>
-  <component name="RunManager">
-    <configuration default="true" type="PythonConfigurationType" factoryName="Python">
-      <module name="gmail-discord-bot" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="" />
-      <option name="IS_MODULE_SDK" value="false" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="DEBUG_JUST_MY_CODE" value="false" />
-      <option name="RUN_TOOL" value="" />
-      <option name="SCRIPT_NAME" value="" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration default="true" type="Tox" factoryName="Tox">
-      <module name="gmail-discord-bot" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="" />
-      <option name="IS_MODULE_SDK" value="false" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="DEBUG_JUST_MY_CODE" value="false" />
-      <option name="RUN_TOOL" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration default="true" type="docs" factoryName="Docutils task">
-      <module name="gmail-discord-bot" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="" />
-      <option name="IS_MODULE_SDK" value="false" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="DEBUG_JUST_MY_CODE" value="false" />
-      <option name="RUN_TOOL" value="" />
-      <option name="docutils_input_file" value="" />
-      <option name="docutils_output_file" value="" />
-      <option name="docutils_params" value="" />
-      <option name="docutils_task" value="" />
-      <option name="docutils_open_in_browser" value="false" />
-      <method v="2" />
-    </configuration>
-    <configuration default="true" type="docs" factoryName="Sphinx task">
-      <module name="gmail-discord-bot" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="" />
-      <option name="IS_MODULE_SDK" value="false" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="DEBUG_JUST_MY_CODE" value="false" />
-      <option name="RUN_TOOL" value="" />
-      <option name="docutils_input_file" value="" />
-      <option name="docutils_output_file" value="" />
-      <option name="docutils_params" value="" />
-      <option name="docutils_task" value="" />
-      <option name="docutils_open_in_browser" value="false" />
-      <method v="2" />
-    </configuration>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="D:\dev\gmail-discord-bot\gmail-discord-bot" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="D:\dev\gmail-discord-bot\gmail-discord-bot" />
+      <recent name="D:\dev\gmail-discord-bot\gmail-discord-bot\tests" />
+    </key>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>
@@ -233,5 +163,15 @@
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/central-bot/app/models/user.py</url>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>

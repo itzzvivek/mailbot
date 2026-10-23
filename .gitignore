@@ -23,3 +23,7 @@ tests/
 docs/
 *.md
 !README.md
+tests/test_new_emails.py
+
+github_deploy_key
+github_deploy_key.pub
