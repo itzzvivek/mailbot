@@ -37,6 +37,7 @@ jobs:
           username: ${{ secrets.ORACLE_USER }}
           key: ${{ secrets.ORACLE_SSH_KEY }}
           script: |
-            cd /home/ubuntu/mailbot
+            cd ~/mailbot
+            git pull origin bot-v3
             docker compose pull
-            docker compose up -d
+            docker compose up -d --build
