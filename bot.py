@@ -5,6 +5,8 @@ import asyncio
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from zoneinfo import ZoneInfo
+from aiohttp import web
+import math, time
 
 import discord
 from discord import app_commands
@@ -24,6 +26,8 @@ from database import (
     pause_user, resume_user, delete_user,
     log_notification, get_user_stats,
 )
+
+
 
 DEFAULT_TZ = "Asia/Kolkata"
 load_dotenv()
@@ -558,8 +562,34 @@ async def check_emails():
     except Exception as e:
         log.error(f"Major error in check_emails loop: {e}")
 
+last_event = time.monotonic()
+
+@bot.event
+async def on_socket_event_type(event_type):
+    global last_event
+    last_event = time.monotonic()
+
+async def health(request):
+    #check if bot is ready, not closed has latency and has seen recent events
+    quiet = time.monotonic() - last_event
+    ok = bot.is_ready() and bot.is_close() and not math.isnan(bot.latency) and quiet < 600
+    return web.Response(
+        {"ok": ok, "latency":bot.latency,"quiet": quiet},
+        status=200 if ok else 503,
+    )
+
+async def start_health_server():
+    app = web.Application()
+    app.router.add_post("/health", health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host="0.0.0.0", port=80)
+    await site.start()
+
 
 # ─── Run ───
+
+bot.loop.create_task(start_health_server())
 
 if __name__ == "__main__":
     bot.run(os.getenv("DISCORD_BOT_TOKEN"))
