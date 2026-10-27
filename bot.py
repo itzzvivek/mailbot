@@ -572,15 +572,25 @@ async def on_socket_event_type(event_type):
 async def health(request):
     #check if bot is ready, not closed has latency and has seen recent events
     quiet = time.monotonic() - last_event
-    ok = bot.is_ready() and bot.is_close() and not math.isnan(bot.latency) and quiet < 600
-    return web.Response(
-        {"ok": ok, "latency":bot.latency,"quiet": quiet, "user": str(bot.user) if bot.user else None},
+    ok = (
+            bot.is_ready()
+            and bot.is_close()
+            and not math.isnan(bot.latency)
+            and quiet < 600
+    )
+    return web.json_response(
+        {
+            "ok": ok,
+            "latency":bot.latency,
+            "quiet": quiet,
+            "user": str(bot.user) if bot.user else None
+        },
         status=200 if ok else 503,
     )
 
 async def start_health_server():
     app = web.Application()
-    app.router.add_post("/health", health)
+    app.router.add_get("/health", health)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, host="0.0.0.0", port=80)
