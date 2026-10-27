@@ -87,8 +87,10 @@ def format_email_time(date_str: str, user_tz: str = DEFAULT_TZ) -> str:
         return date_str or "Unknown"
 
 
-def build_gmail_url(message_id: str) -> str:
-    return f"https://mail.google.com/mail/u/0/#inbox/{message_id}"
+def build_gmail_url(web_id: str) -> str:
+    if not web_id:
+        return f"https://mail.google.com/mail/u/0/#inbox"
+    return f"https://mail.google.com/mail/u/0/#all/{web_id}"
 
 
 def format_category(categories, important: bool = False) -> str:
@@ -535,7 +537,7 @@ async def check_emails():
                             em.get("categories") or [], em.get("important", False)
                         )
                         time_str = format_email_time(em.get("date", ""), user_tz)
-                        gmail_url = build_gmail_url(em["id"])
+                        gmail_url = build_gmail_url(em.get("web_id"))
 
                         embed = discord.Embed(
                             title=em['subject'][:256] or "(no subject)",
@@ -574,7 +576,7 @@ async def health(request):
     quiet = time.monotonic() - last_event
     ok = (
             bot.is_ready()
-            and bot.is_close()
+            and bot.is_closed()
             and not math.isnan(bot.latency)
             and quiet < 600
     )

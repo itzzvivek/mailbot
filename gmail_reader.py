@@ -107,6 +107,18 @@ def _extract_gmail_labels(msg_data) -> dict:
 
     return {"categories": unique, "important": is_important}
 
+def _extract_gmail_web_id(msg_data) -> str | None:
+    """Extract X-GM-MSGID and convert to hex string for Gmail web URL"""
+    for part in msg_data:
+        if not isinstance(part, tuple) or len(part) == 0:
+            continue
+
+        part_str = part[0].decode(errors="ignore") if isinstance(part[0], bytes) else str(part[0])
+
+        match = re.search(r'X-GM-MSGID(\d+)', part_str)
+        if match:
+            return format(int(match.group(1)), 'x')
+    return None
 
 def _build_imap_criteria(filters: List[str]) -> list:
     if not filters or "all" in filters:
@@ -202,7 +214,7 @@ def fetch_new_emails_sync(
         for uid in uids:
             uid_int = int(uid)
             try:
-                status, msg_data = mail.uid("fetch", uid, "(RFC822 X-GM-LABELS)")
+                status, msg_data = mail.uid("fetch", uid, "(RFC822 X-GM-LABELS X-GM-MSGID)")
                 if status != "OK":
                     continue
 
@@ -220,9 +232,11 @@ def fetch_new_emails_sync(
                 date = msg.get("Date", "")
                 preview = _extract_preview(msg, 300)
                 meta = _extract_gmail_labels(msg_data)
+                web_id = _extract_gmail_web_id(msg_data)
 
                 emails.append({
                     "id": str(uid_int),
+                    "web_id": web_id,
                     "uid": uid_int,
                     "subject": subject,
                     "from": sender,
