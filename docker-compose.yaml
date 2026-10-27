@@ -31,14 +31,14 @@ services:
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
       DATABASE_URL: ${DATABASE_URL}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      PORT: 8000
+    ports:
+      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - mailbot-network
     volumes:
-      - .:/app
       - ./logs:/app/logs
 
 volumes:
